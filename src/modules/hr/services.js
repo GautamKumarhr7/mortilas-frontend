@@ -5,13 +5,19 @@ import axiosInstance from '../../utils/axios';
 export const attendanceAPI = {
     // Get all attendance logs
     getAllLogs: async () => {
-        const response = await axiosInstance.get('/attendance-logs');
+        const response = await axiosInstance.get('/attendance');
         return response.data;
     },
     
     // Get attendance logs for a specific user
     getUserLogs: async (userId) => {
-        const response = await axiosInstance.get(`/attendance-logs/user/${userId}`);
+        const response = await axiosInstance.get(`/attendance`);
+        return response.data;
+    },
+
+    // Create an attendance record
+    createAttendance: async (data) => {
+        const response = await axiosInstance.post('/attendance', data);
         return response.data;
     }
 };
@@ -23,21 +29,9 @@ export const employeeAPI = {
    */
   getAllEmployees: async () => {
     try {
-      // First try singular (user's provided path)
-      const response = await axiosInstance.get('/users/employee');
+      const response = await axiosInstance.get('/users');
       return response.data;
     } catch (error) {
-      const status = error.response?.status;
-      // If singular is forbidden (403) or not found (404), plural /users/employees might be the list endpoint
-      if (status === 403 || status === 404) {
-        try {
-          console.warn(`Singular /users/employee failed (${status}), trying plural /users/employees...`);
-          const pluralRes = await axiosInstance.get('/users/employees');
-          return pluralRes.data;
-        } catch {
-          // If both fail, let it throw the original error
-        }
-      }
       console.error('Employee List Fetch Error:', error.response?.data || error.message);
       throw error;
     }
@@ -45,7 +39,7 @@ export const employeeAPI = {
 
   // Get user by id
   getEmployeeById: async (id) => {
-      const response = await axiosInstance.get(`/users/employee/${id}`);
+      const response = await axiosInstance.get(`/users/${id}`);
       return response.data;
   },
 
@@ -53,7 +47,7 @@ export const employeeAPI = {
    * Create a new employee
    */
   createEmployee: async (employeeData) => {
-    const response = await axiosInstance.post('/users/employee', employeeData);
+    const response = await axiosInstance.post('/users/', employeeData);
     return response.data;
   },
 
@@ -61,7 +55,7 @@ export const employeeAPI = {
    * Update an employee
    */
   updateEmployee: async (id, employeeData) => {
-    const response = await axiosInstance.put(`/users/employee/${id}`, employeeData);
+    const response = await axiosInstance.put(`/users/${id}`, employeeData);
     return response.data;
   },
 
@@ -69,7 +63,7 @@ export const employeeAPI = {
    * Delete an employee
    */
   deleteEmployee: async (id) => {
-    const response = await axiosInstance.delete(`/users/employee/${id}`);
+    const response = await axiosInstance.delete(`/users/${id}`);
     return response.data;
   },
 };
@@ -77,14 +71,7 @@ export const employeeAPI = {
 export const leaveAPI = {
     // Get all leave records
     getAllLeaves: async () => {
-        const response = await axiosInstance.get('/leaves');
-        return response.data;
-    },
-
-    // Create a new leave entry
-    createLeave: async (leaveData) => {
-        // payload: { type: string, total: number }
-        const response = await axiosInstance.post('/leaves', leaveData);
+        const response = await axiosInstance.get('/leave-requests');
         return response.data;
     },
 
@@ -101,27 +88,32 @@ export const leaveAPI = {
     },
 
     // Get specific user's leave allocations
+    // Get user's leave balances
     getUserLeaveAllocations: async (userId) => {
-        const response = await axiosInstance.get(`/leave-allocations/user/${userId}`);
+        const response = await axiosInstance.get(`/leaves/user/${userId}`);
         return response.data;
     },
 
-    // Get employee leave details
+    // Get employee leave requests
     getEmployeeLeave: async (userId) => {
-        const response = await axiosInstance.get(`/leaves/user/${userId}`);
+        const response = await axiosInstance.get(`/leave-requests/user/${userId}`);
         return response.data;
     },
 
     // Approve leave request
     approveLeave: async (id) => {
-        const response = await axiosInstance.patch(`/leaves/${id}/approve`, {});
+        const response = await axiosInstance.patch(`/leave-requests/${id}/approve`, {});
         return response.data;
     },
 
     // Reject leave request
     rejectLeave: async (id, reason) => {
-        // payload: { rejectionReason: string }
-        const response = await axiosInstance.patch(`/leaves/${id}/reject`, { rejectionReason: reason || "No reason provided" });
+        const response = await axiosInstance.patch(`/leave-requests/${id}/reject`, { rejectionReason: reason || "No reason provided" });
+        return response.data;
+    },
+
+    createLeave: async (leaveData) => {
+        const response = await axiosInstance.post('/leave-requests', leaveData);
         return response.data;
     },
 
@@ -139,21 +131,21 @@ export const leaveAPI = {
 };
 
 export const payrollAPI = {
-    // Create new payroll record
-    createPayroll: async (payrollData) => {
-        const response = await axiosInstance.post('/payrolls/', payrollData);
+    // Generate new payroll record
+    generatePayroll: async (payrollData) => {
+        const response = await axiosInstance.post('/payrolls/generate', payrollData);
         return response.data;
     },
 
     // Get all payroll records
     getAllPayrolls: async () => {
-        const response = await axiosInstance.get('/payrolls/');
+        const response = await axiosInstance.get('/payrolls');
         return response.data;
     },
 
-    // Get payroll by user ID
-    getPayrollByUserId: async (userId) => {
-        const response = await axiosInstance.get(`/payrolls/user/${userId}`);
+    // Get payroll by employee ID
+    getPayrollByEmployeeId: async (userId) => {
+        const response = await axiosInstance.get(`/payrolls/employee/${userId}`);
         return response.data;
     }
 };
@@ -194,4 +186,86 @@ export const reimbursementAPI = {
         const response = await axiosInstance.patch(`/reimbursements/${id}/reject`, {});
         return response.data;
     }
+};
+
+export const jobPostAPI = {
+    getAll: async () => {
+        const response = await axiosInstance.get('/job-posts');
+        return response.data;
+    },
+    getById: async (id) => {
+        const response = await axiosInstance.get(`/job-posts/${id}`);
+        return response.data;
+    },
+    create: async (data) => {
+        const response = await axiosInstance.post('/job-posts', data);
+        return response.data;
+    },
+    update: async (id, data) => {
+        const response = await axiosInstance.put(`/job-posts/${id}`, data);
+        return response.data;
+    },
+    close: async (id) => {
+        const response = await axiosInstance.patch(`/job-posts/${id}/close`, {});
+        return response.data;
+    },
+    delete: async (id) => {
+        const response = await axiosInstance.delete(`/job-posts/${id}`);
+        return response.data;
+    }
+};
+
+export const applicantAPI = {
+    getAll: async () => {
+        const response = await axiosInstance.get('/applicants');
+        return response.data;
+    },
+    getByJobPost: async (jobPostId) => {
+        const response = await axiosInstance.get(`/applicants/job-post/${jobPostId}`);
+        return response.data;
+    },
+    getById: async (id) => {
+        const response = await axiosInstance.get(`/applicants/${id}`);
+        return response.data;
+    },
+    apply: async (data) => {
+        const response = await axiosInstance.post('/applicants', data);
+        return response.data;
+    },
+    update: async (id, data) => {
+        const response = await axiosInstance.put(`/applicants/${id}`, data);
+        return response.data;
+    },
+    delete: async (id) => {
+        const response = await axiosInstance.delete(`/applicants/${id}`);
+        return response.data;
+    },
+    shortlist: async (id) => {
+        const response = await axiosInstance.patch(`/applicants/${id}/shortlist`, {});
+        return response.data;
+    },
+    scheduleInterview: async (id, data) => {
+        const response = await axiosInstance.patch(`/applicants/${id}/schedule-interview`, data);
+        return response.data;
+    },
+    select: async (id) => {
+        const response = await axiosInstance.patch(`/applicants/${id}/select`, {});
+        return response.data;
+    },
+    reject: async (id) => {
+        const response = await axiosInstance.patch(`/applicants/${id}/reject`, {});
+        return response.data;
+    },
+    onboard: async (id, data) => {
+        const response = await axiosInstance.patch(`/applicants/${id}/onboard`, data);
+        return response.data;
+    }
+};
+
+export const complianceAPI = {
+    getSummary: async (month, year) => {
+        const response = await axiosInstance.get(`/compliance/summary?month=${month}&year=${year}`);
+        return response.data;
+    }
+    // ECR and ESI downloads will be handled via direct window.open or blob downloads using axios in the component
 };

@@ -16,12 +16,12 @@ export default function ApplyLeave() {
     const [activeTab, setActiveTab] = useState('All');
 
     const [formData, setFormData] = useState({
-        type: 'casual',
+        type: 'CL',
         title: '',
         reason: '',
-        days: 1,
         from: '',
-        to: ''
+        to: '',
+        days: 1
     });
 
     useEffect(() => {
@@ -43,15 +43,7 @@ export default function ApplyLeave() {
         setIsLoading(true);
         try {
             const allocRes = await leaveAPI.getUserLeaveAllocations(id);
-            let backendAllocations = allocRes?.leaveAllocation || allocRes?.leaveAllocations || allocRes?.allocations || allocRes?.data || allocRes?.items || allocRes;
-            if (!Array.isArray(backendAllocations)) {
-                if (backendAllocations && (backendAllocations.casual !== undefined || backendAllocations.sick !== undefined)) {
-                    backendAllocations = [backendAllocations];
-                } else {
-                    backendAllocations = Object.values(allocRes || {}).find(Array.isArray) || [];
-                }
-            }
-            setAllocations(backendAllocations);
+            setAllocations(allocRes?.data || allocRes || {});
 
             const reqRes = await leaveAPI.getEmployeeLeave(id);
             const backendRequests = reqRes?.leaves || reqRes?.data?.leaves || (Array.isArray(reqRes) ? reqRes : (reqRes?.data || []));
@@ -72,20 +64,19 @@ export default function ApplyLeave() {
         setIsSaving(true);
         try {
             const payload = {
-                userId: userProfile?.id || userProfile?.userId || 1,
+                employeeId: userProfile?.id || userProfile?.userId || 1,
                 type: formData.type,
                 title: formData.title,
-                reason: formData.reason,
-                days: Number(formData.days),
-                from: formData.from,
-                to: formData.to
+                description: formData.reason,
+                fromDate: formData.from,
+                toDate: formData.to
             };
 
             await leaveAPI.createLeave(payload);
             toast.success('Leave applied successfully!');
             fetchData();
             setShowApplyModal(false);
-            setFormData({ type: 'casual', title: '', reason: '', days: 1, from: '', to: '' });
+            setFormData({ type: 'CL', title: '', reason: '', days: 1, from: '', to: '' });
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to submit leave request');
         } finally {
@@ -101,29 +92,16 @@ export default function ApplyLeave() {
         return matchesSearch && status === activeTab.toLowerCase();
     });
 
-    const totalAlloc = (Array.isArray(allocations) ? allocations : []).reduce((acc, a) => {
-        acc.casual = (acc.casual || 0) + Number(a.casual || 0);
-        acc.sick = (acc.sick || 0) + Number(a.sick || 0);
-        acc.annual = (acc.annual || 0) + Number(a.annual || 0);
-        acc.company = (acc.company || 0) + Number(a.company || 0);
-        acc.other = (acc.other || 0) + Number(a.other || 0);
-        return acc;
-    }, { casual: 0, sick: 0, annual: 0, company: 0, other: 0 });
-
-    const usedCount = requests
-        .filter(r => r.status?.toLowerCase() === 'approved')
-        .reduce((acc, r) => {
-            const t = r.type?.toLowerCase() || 'casual';
-            acc[t] = (acc[t] || 0) + Number(r.days || 0);
-            acc.total = (acc.total || 0) + Number(r.days || 0);
-            return acc;
-        }, { total: 0 });
+    const balance = allocations || {};
 
     const stats = [
-        { label: 'Casual Balance', value: `${(totalAlloc.casual || 0) - (usedCount.casual || 0)}`, sub: `/ ${totalAlloc.casual || 0} Total`, color: 'text-blue-600', bg: 'bg-blue-50' },
-        { label: 'Sick Balance', value: `${(totalAlloc.sick || 0) - (usedCount.sick || 0)}`, sub: `/ ${totalAlloc.sick || 0} Total`, color: 'text-amber-600', bg: 'bg-amber-50' },
-        { label: 'Annual Balance', value: `${(totalAlloc.annual || 0) - (usedCount.annual || 0)}`, sub: `/ ${totalAlloc.annual || 0} Total`, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-        { label: 'Leaves Used', value: `${usedCount.total || 0}`, sub: 'Days total', color: 'text-rose-600', bg: 'bg-rose-50' },
+        { label: 'Casual Leave', value: `${12 - (balance.remainCl ?? 12)}/12`, color: 'text-blue-600', bg: 'bg-blue-50' },
+        { label: 'Sick Leave', value: `${7 - (balance.remainSl ?? 7)}/7`, color: 'text-amber-600', bg: 'bg-amber-50' },
+        { label: 'Earned Leave', value: `${15 - (balance.remainEl ?? 15)}/15`, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+        { label: 'Leave Without Pay', value: `${Math.abs(balance.remainLwp ?? 0)}`, color: 'text-rose-600', bg: 'bg-rose-50' },
+        { label: 'Maternity', value: `${182 - (balance.remainMaternity ?? 182)}/182`, color: 'text-purple-600', bg: 'bg-purple-50' },
+        { label: 'Paternity', value: `${15 - (balance.remainPaternity ?? 15)}/15`, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+        { label: 'CompOff', value: `${Math.abs(balance.remainCompOff ?? 0)}`, color: 'text-slate-600', bg: 'bg-slate-50' },
     ];
 
     const statusBadge = {
@@ -166,19 +144,18 @@ export default function ApplyLeave() {
             </div>
 
             {/* Stats Overview */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="flex gap-3 overflow-x-auto pb-4 no-scrollbar snap-x">
                 {isLoading ? (
-                    Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} variant="card" className="h-24 rounded-3xl" />)
+                    Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} variant="card" className="h-24 rounded-3xl min-w-[160px] snap-start" />)
                 ) : (
                     stats.map((s, i) => (
-                        <div key={i} className={`card p-5 hover:shadow-xl transition-all border-none ${s.bg} rounded-3xl relative overflow-hidden group`}>
+                        <div key={i} className={`card p-5 min-w-[160px] flex-1 hover:shadow-xl transition-all border-none ${s.bg} rounded-3xl relative overflow-hidden group snap-start`}>
                             <div className="absolute -right-2 -top-2 w-16 h-16 bg-white/20 rounded-full blur-2xl group-hover:blur-xl transition-all" />
-                            <div className="flex items-baseline gap-1">
-                                <p className={`text-3xl font-black ${s.color} tracking-tighter`}>{s.value}</p>
-                                {s.sub && <span className={`text-[10px] font-bold ${s.color} opacity-60 uppercase tracking-wider`}>{s.sub}</span>}
+                            <div className="flex items-baseline gap-1 mt-1">
+                                <p className={`text-2xl font-black ${s.color} tracking-tight`}>{s.value}</p>
                             </div>
                             <div className="flex items-center gap-2 mt-1">
-                                <p className={`text-[10px] font-black uppercase tracking-widest opacity-70 ${s.color}`}>{s.label}</p>
+                                <p className={`text-[10px] font-black uppercase tracking-widest opacity-80 ${s.color}`}>{s.label}</p>
                                 {Number(s.value) < 0 && <span className="text-[7px] bg-red-100 text-red-600 px-1 py-0.5 rounded-full font-black animate-pulse">OVERDRAWN</span>}
                             </div>
                         </div>
@@ -235,16 +212,16 @@ export default function ApplyLeave() {
                                         </td>
                                         <td className="px-6 py-4 text-xs font-bold text-slate-600">
                                             {req.days || 1} {Number(req.days) === 1 ? 'Day' : 'Days'}
-                                            {req.from && (
+                                            {req.fromDate && (
                                                 <span className="ml-1 opacity-60 text-[9px] font-medium block mt-0.5">
-                                                    {new Date(req.from).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} 
-                                                    {req.to && ` - ${new Date(req.to).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`}
+                                                    {new Date(req.fromDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} 
+                                                    {req.toDate && ` - ${new Date(req.toDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`}
                                                 </span>
                                             )}
                                         </td>
                                         <td className="px-6 py-4">
                                             <p className="text-slate-700 font-bold truncate max-w-[200px]">{req.title || 'Leave Request'}</p>
-                                            <p className="text-slate-500 text-[10px] font-medium italic opacity-70 truncate max-w-[200px]">"{req.reason || 'No reason'}"</p>
+                                            <p className="text-slate-500 text-[10px] font-medium italic opacity-70 truncate max-w-[200px]">"{req.description || 'No reason'}"</p>
                                         </td>
                                         <td className="px-6 py-4 text-slate-400 text-[10px] font-bold uppercase">{appliedDate}</td>
                                         <td className="px-6 py-4 flex items-center gap-2">
@@ -294,11 +271,13 @@ export default function ApplyLeave() {
                                             value={formData.type}
                                             onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                                         >
-                                            <option value="casual">Casual Leave</option>
-                                            <option value="sick">Sick Leave</option>
-                                            <option value="annual">Annual Leave</option>
-                                            <option value="company">Company Holiday</option>
-                                            <option value="other">Other Reason</option>
+                                            <option value="CL">Casual Leave (CL)</option>
+                                            <option value="SL">Sick Leave (SL)</option>
+                                            <option value="EL">Earned Leave (EL)</option>
+                                            <option value="LWP">Leave Without Pay (LWP)</option>
+                                            <option value="Maternity">Maternity Leave</option>
+                                            <option value="Paternity">Paternity Leave</option>
+                                            <option value="CompOff">Compensatory Off</option>
                                         </select>
                                         <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-focus-within/select:rotate-180 transition-transform" />
                                     </div>

@@ -9,8 +9,9 @@ import { authAPI } from '../modules/auth/services';
 export default function AppLayout() {
     const dispatch = useDispatch();
     const { activeModule, sidebarOpen } = useSelector((state) => state.ui);
-    const { roleId: userRole, isLoggedIn } = useSelector((state) => state.auth);
+    const { roleId, userProfile, isLoggedIn } = useSelector((state) => state.auth);
     const { modules } = useSelector((state) => state.permissions);
+    const userRole = roleId || userProfile?.designationId;
 
     useEffect(() => {
         const fetchPermissions = async () => {
@@ -18,12 +19,16 @@ export default function AppLayout() {
                 dispatch(setPermissionsStart());
                 try {
                     const permResponse = await authAPI.getRolePermissions(userRole);
-                    // Handle array extraction gracefully in case the backend returns { data: [...] }
                     const dataArray = Array.isArray(permResponse) ? permResponse : (permResponse.data || permResponse);
                     dispatch(setPermissionsSuccess(Array.isArray(dataArray) ? dataArray : []));
                 } catch (error) {
                     console.error("Failed to fetch permissions on reload", error);
-                    dispatch(setPermissionsFailure(error.message));
+                    // Provide fallback modules so the sidebar isn't empty if backend fails
+                    const fallbackModules = [
+                        { id: 'dash-fallback', name: 'Dashboard', code: 'dashboard' },
+                        { id: 'hr-fallback', name: 'HR', code: 'hr' }
+                    ];
+                    dispatch(setPermissionsSuccess(fallbackModules));
                 }
             }
         };

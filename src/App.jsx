@@ -2,13 +2,22 @@ import { useSelector } from 'react-redux';
 import { Toaster } from 'react-hot-toast';
 import AppLayout from './layouts/AppLayout';
 import Login from './modules/auth/pages/Login';
+import Register from './modules/auth/pages/Register';
+import JobPortal from './modules/hr/pages/JobPortal';
 import { AppProvider } from './context/AppContext';
 
 function AppContent() {
-  const { isLoggedIn } = useSelector((state) => state.auth);
+  const { isLoggedIn, userProfile } = useSelector((state) => state.auth);
 
   if (!isLoggedIn) {
+    if (window.location.pathname === '/register') {
+      return <Register />;
+    }
     return <Login />;
+  }
+
+  if (userProfile?.type === 'applicant') {
+    return <JobPortal />;
   }
 
   return <AppLayout />;

@@ -81,8 +81,10 @@ function NavItem({ item, depth = 0, role, hasMultipleSections = false }) {
 export default function Sidebar({ role }) {
     const dispatch = useDispatch();
     const { sidebarOpen, activeModule } = useSelector((state) => state.ui);
-    const { userProfile, roleId } = useSelector((state) => state.auth);
+    const { userProfile, roleId: rawRoleId } = useSelector((state) => state.auth);
     const { modules } = useSelector((state) => state.permissions);
+    
+    const roleId = rawRoleId || userProfile?.designationId;
 
     const displayName = userProfile?.name || (roleId === 'admin' ? 'Admin' : 'Employee');
     const displayEmail = userProfile?.email || 'portal@ecoconstruct.com';

@@ -23,11 +23,8 @@ export default function LeaveManagement() {
   const [requests, setRequests] = useState(initialRequests);
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [activeTab, setActiveTab] = useState('All');
-  const [currentView, setCurrentView] = useState('leave'); // 'leave' or 'allot'
   const [search, setSearch] = useState('');
-  const [formData, setFormData] = useState({ name: '', type: 'Casual', start: '', end: '', days: 1, reason: '', title: '', userId: '' });
-
-  const [allotData, setAllotData] = useState({ userId: '', sick: '0', annual: '0', other: '0', casual: '0', company: '0' });
+  const [formData, setFormData] = useState({ name: '', type: 'CL', start: '', end: '', days: 1, reason: '', title: '', userId: '' });
 
   const [employees, setEmployees] = useState([]);
   const [allocations, setAllocations] = useState([]);
@@ -37,14 +34,13 @@ export default function LeaveManagement() {
   const [nameCache, setNameCache] = useState({});
 
   const resolveMissingNames = useCallback(async (reqs) => {
-    const ids = [...new Set(reqs.map(r => r.userId || r.user_id))].filter(Boolean);
+    const ids = [...new Set(reqs.map(r => r.userId || r.user_id || r.employeeId))].filter(Boolean);
     const unknownIds = ids.filter(id => {
       const allPossible = [...employees, ...(globalEmployees || [])];
       return !allPossible.find(e => Number(e.id) === Number(id));
     });
 
     for (const id of unknownIds) {
-      if (nameCache[id]) continue;
       try {
         const empInfo = await employeeAPI.getEmployeeById(id);
         const name = empInfo?.name || empInfo?.employee?.name || `User ${id}`;
@@ -53,7 +49,7 @@ export default function LeaveManagement() {
         // Missing names are non-blocking for the leave list.
       }
     }
-  }, [employees, globalEmployees, nameCache]);
+  }, [employees, globalEmployees]);
 
   const fetchRequests = useCallback(async () => {
     setIsLoading(true);
@@ -78,25 +74,10 @@ export default function LeaveManagement() {
 
   const fetchAllocations = useCallback(async () => {
     try {
-      let res;
-      if (userRole === 'employee') {
-        const id = userProfile?.id || userProfile?.userId || userProfile?._id;
-        if (!id) return;
-        res = await leaveAPI.getUserLeaveAllocations(id);
-      } else {
-        res = await leaveAPI.getAllLeaveAllocations();
-      }
-
-      let backendAllocations = res?.leaveAllocation || res?.leaveAllocations || res?.allocations || res?.data || res?.items || res;
-      if (!Array.isArray(backendAllocations)) {
-        if (backendAllocations && (backendAllocations.casual !== undefined || backendAllocations.sick !== undefined)) {
-          backendAllocations = [backendAllocations];
-        } else {
-          backendAllocations = Object.values(res || {}).find(Array.isArray) || [];
-        }
-      }
-
-      setAllocations(Array.isArray(backendAllocations) ? backendAllocations : []);
+      const id = userProfile?.id || userProfile?.userId || userProfile?._id;
+      if (!id) return;
+      const res = await leaveAPI.getUserLeaveAllocations(id);
+      setAllocations(res?.data || res || {});
     } catch (error) {
       console.error('Failed to fetch allocations:', error);
     }
@@ -127,7 +108,8 @@ export default function LeaveManagement() {
     fetchEmployees();
     fetchAllocations();
     fetchRequests();
-  }, [fetchAllocations, fetchEmployees, fetchRequests]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleApprove = async (id) => {
     try {
@@ -164,20 +146,19 @@ export default function LeaveManagement() {
     try {
       const currentUserId = formData.userId || userProfile?.id || userProfile?.userId;
       const payload = {
-        userId: Number(currentUserId),
-        type: formData.type.toLowerCase(),
+        employeeId: Number(currentUserId),
+        type: formData.type,
         title: formData.title,
-        reason: formData.reason,
-        days: Number(formData.days),
-        from: formData.start,
-        to: formData.end
+        description: formData.reason,
+        fromDate: formData.start,
+        toDate: formData.end
       };
 
       await leaveAPI.createLeave(payload);
       toast.success(`Leave request for "${payload.title}" submitted!`);
       fetchRequests();
       setShowApplyModal(false);
-      setFormData({ name: '', type: 'Casual', start: '', end: '', days: 1, reason: '', title: '', userId: '' });
+      setFormData({ name: '', type: 'CL', start: '', end: '', days: 1, reason: '', title: '', userId: '' });
     } catch (error) {
       console.error(error);
       toast.error(error.response?.data?.message || 'Failed to submit leave request');
@@ -186,9 +167,9 @@ export default function LeaveManagement() {
     }
   };
 
-  const filtered = requests.filter(r => {
+  const filteredRequests = requests.filter(r => {
     const allPossibleEmployees = [...employees, ...(globalEmployees || [])];
-    const currentId = Number(r.userId || r.user_id);
+    const currentId = Number(r.userId || r.user_id || r.employeeId);
     const emp = allPossibleEmployees.find(e => Number(e.id) === currentId);
     const cachedName = nameCache[currentId];
     const isSelf = Number(userProfile?.id || userProfile?.userId) === currentId;
@@ -203,73 +184,16 @@ export default function LeaveManagement() {
     return (activeTab === 'All' || displayStatus === activeTab) && matchSearch;
   });
 
-  const totalAlloc = (Array.isArray(allocations) ? allocations : []).reduce((acc, a) => {
-    acc.casual = (acc.casual || 0) + Number(a.casual || 0);
-    acc.sick = (acc.sick || 0) + Number(a.sick || 0);
-    acc.annual = (acc.annual || 0) + Number(a.annual || 0);
-    acc.company = (acc.company || 0) + Number(a.company || 0);
-    acc.other = (acc.other || 0) + Number(a.other || 0);
-    return acc;
-  }, { casual: 0, sick: 0, annual: 0, company: 0, other: 0 });
+  const balance = allocations || {};
 
-  const usedCount = requests
-    .filter(r => r.status?.toLowerCase() === 'approved')
-    .reduce((acc, r) => {
-      const type = r.type?.toLowerCase() || 'casual';
-      const days = Number(r.days || 0);
-      acc[type] = (acc[type] || 0) + days;
-      acc.total = (acc.total || 0) + days;
-      return acc;
-    }, { total: 0 });
-
-  const stats = userRole === 'employee' ? [
-    { 
-      label: 'Casual Balance', 
-      value: `${(totalAlloc.casual || 0) - (usedCount.casual || 0)}`, 
-      sub: `/ ${totalAlloc.casual || 0} Total`,
-      color: 'text-blue-600',
-      bg: 'bg-blue-50'
-    },
-    { 
-      label: 'Sick Balance', 
-      value: `${(totalAlloc.sick || 0) - (usedCount.sick || 0)}`, 
-      sub: `/ ${totalAlloc.sick || 0} Total`,
-      color: 'text-amber-600',
-      bg: 'bg-amber-50'
-    },
-    { 
-      label: 'Annual Balance', 
-      value: `${(totalAlloc.annual || 0) - (usedCount.annual || 0)}`, 
-      sub: `/ ${totalAlloc.annual || 0} Total`,
-      color: 'text-emerald-600',
-      bg: 'bg-emerald-50'
-    },
-    { 
-      label: 'Company Balance', 
-      value: `${(totalAlloc.company || 0) - (usedCount.company || 0)}`, 
-      sub: `/ ${totalAlloc.company || 0} Total`,
-      color: 'text-purple-600',
-      bg: 'bg-purple-50'
-    },
-    { 
-      label: 'Other Balance', 
-      value: `${(totalAlloc.other || 0) - (usedCount.other || 0)}`, 
-      sub: `/ ${totalAlloc.other || 0} Total`,
-      color: 'text-slate-600',
-      bg: 'bg-slate-50'
-    },
-    { 
-      label: 'Leaves Used', 
-      value: `${usedCount.total || 0}`, 
-      sub: 'Days total',
-      color: 'text-rose-600',
-      bg: 'bg-rose-50'
-    },
-  ] : [
-    { label: 'Total Requests', value: requests.length, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Pending Approvals', value: requests.filter(r => r.status?.toLowerCase() === 'pending').length, color: 'text-purple-600', bg: 'bg-purple-50' },
-    { label: 'Leaves Approved', value: usedCount.total, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { label: 'Leaves Rejected', value: requests.filter(r => r.status?.toLowerCase() === 'rejected').length, color: 'text-red-600', bg: 'bg-red-50' },
+  const stats = [
+    { label: 'Casual Leave', value: `${12 - (balance.remainCl ?? 12)}/12`, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { label: 'Sick Leave', value: `${7 - (balance.remainSl ?? 7)}/7`, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { label: 'Earned Leave', value: `${15 - (balance.remainEl ?? 15)}/15`, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { label: 'Leave Without Pay', value: `${Math.abs(balance.remainLwp ?? 0)}`, color: 'text-rose-600', bg: 'bg-rose-50' },
+    { label: 'Maternity', value: `${182 - (balance.remainMaternity ?? 182)}/182`, color: 'text-purple-600', bg: 'bg-purple-50' },
+    { label: 'Paternity', value: `${15 - (balance.remainPaternity ?? 15)}/15`, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { label: 'CompOff', value: `${Math.abs(balance.remainCompOff ?? 0)}`, color: 'text-slate-600', bg: 'bg-slate-50' },
   ];
 
   return (
@@ -290,49 +214,36 @@ export default function LeaveManagement() {
           </p>
         </div>
 
-        {/* Action Controls — same toggle visible for both roles */}
+        {/* Action Controls */}
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-2xl w-fit">
-            <button
-              onClick={() => setCurrentView('leave')}
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${currentView === 'leave' ? 'bg-[#2f6645] text-white shadow-lg' : 'text-slate-500 hover:bg-white/50'}`}
-            >
-              <FileText className="w-4 h-4" /> Reports
-            </button>
+          <div className="flex items-center gap-2 p-1.5 w-fit">
             <button
               onClick={() => {
-                if (userRole === 'employee') {
-                  // Employee clicks Allot Leave => open apply modal instead
-                  setFormData(prev => ({ ...prev, userId: userProfile?.id || userProfile?.userId || '' }));
-                  setShowApplyModal(true);
-                } else {
-                  setCurrentView('allot');
-                }
+                setFormData(prev => ({ ...prev, userId: userProfile?.id || userProfile?.userId || '' }));
+                setShowApplyModal(true);
               }}
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${currentView === 'allot' ? 'bg-[#2f6645] text-white shadow-lg' : 'text-slate-500 hover:bg-white/50'}`}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all bg-[#2f6645] text-white shadow-lg"
             >
-              <UserPlus className="w-4 h-4" /> {userRole === 'employee' ? 'Request Leave' : 'Allot Leave'}
+              <UserPlus className="w-4 h-4" /> Apply for Leave
             </button>
           </div>
         </div>
       </div>
 
-      {currentView === 'leave' ? (
-        <>
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+
+          <div className="flex gap-3 overflow-x-auto pb-4 no-scrollbar snap-x">
             {stats.map((s, i) => (
-              <div key={i} className={`card p-5 hover:shadow-xl transition-all border-none ${s.bg} rounded-3xl relative overflow-hidden group`}>
+              <div key={i} className={`card min-w-[160px] flex-1 p-5 hover:shadow-xl transition-all border-none ${s.bg} rounded-3xl relative overflow-hidden group snap-start`}>
                 <div className="absolute -right-2 -top-2 w-16 h-16 bg-white/20 rounded-full blur-2xl group-hover:blur-xl transition-all" />
                 {isLoading ? (
                   <Skeleton variant="badge" className="h-8 w-16 mb-0" />
                 ) : (
-                  <div className="flex items-baseline gap-1">
-                    <p className={`text-3xl font-black ${s.color} tracking-tighter`}>{s.value}</p>
-                    {s.sub && <span className={`text-[10px] font-bold ${s.color} opacity-60 uppercase tracking-wider`}>{s.sub}</span>}
-                  </div>
+                  <div className="flex items-baseline gap-1 mt-1">
+                  <p className={`text-2xl font-black ${s.color} tracking-tight`}>{s.value}</p>
+                </div>
                 )}
                 <div className="flex items-center gap-2 mt-1">
-                  <p className={`text-[10px] font-black uppercase tracking-widest opacity-70 ${s.color}`}>{s.label}</p>
+                  <p className={`text-[10px] font-black uppercase tracking-widest opacity-80 ${s.color}`}>{s.label}</p>
                   {Number(s.value) < 0 && <span className="text-[7px] bg-red-100 text-red-600 px-1 py-0.5 rounded-full font-black animate-pulse">OVERDRAWN</span>}
                 </div>
               </div>
@@ -381,10 +292,10 @@ export default function LeaveManagement() {
                         <td className="px-6 py-4"><Skeleton variant="button" className="w-12 h-8" /></td>
                       </tr>
                     ))
-                  ) : filtered.length === 0 ? (
+                  ) : filteredRequests.length === 0 ? (
                     <tr><td colSpan="7" className="p-12 text-center text-slate-300 font-bold uppercase tracking-widest text-xs">No leave records found.</td></tr>
-                  ) : filtered.map(req => {
-                    const currentId = Number(req.userId || req.user_id);
+                  ) : filteredRequests.map(req => {
+                    const currentId = Number(req.userId || req.user_id || req.employeeId);
                     const allPossibleEmployees = [...employees, ...(globalEmployees || [])];
                     const emp = allPossibleEmployees.find(e => Number(e.id) === currentId);
                     const isSelf = Number(userProfile?.id || userProfile?.userId) === currentId;
@@ -416,16 +327,15 @@ export default function LeaveManagement() {
                         <td className="px-6 py-4">
                           <p className="text-slate-900 font-black truncate max-w-[150px]">{req.title || 'Leave Request'}</p>
                           <p className="text-slate-400 text-[10px] uppercase font-bold mt-0.5">
-                            {req.days || 1} {Number(req.days) === 1 ? 'Day' : 'Days'}
-                            {req.from && (
+                            {req.fromDate && (
                               <span className="ml-1 opacity-70">
-                                ({new Date(req.from).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} 
-                                {req.to && ` - ${new Date(req.to).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`})
+                                {new Date(req.fromDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} 
+                                {req.toDate && ` - ${new Date(req.toDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`}
                               </span>
                             )}
                           </p>
                         </td>
-                        <td className="px-6 py-4 text-slate-500 text-xs max-w-[180px] font-medium truncate italic" title={req.reason}>"{req.reason || 'No reason'}"</td>
+                        <td className="px-6 py-4 text-slate-500 text-xs max-w-[180px] font-medium truncate italic" title={req.description}>"{req.description || 'No reason'}"</td>
                         <td className="px-6 py-4 text-slate-400 text-[10px] font-bold uppercase">{appliedDate}</td>
                         <td className="px-6 py-4">
                           <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${statusBadge[statusStr.toLowerCase()] || 'bg-amber-100 text-amber-700'}`}>
@@ -451,136 +361,6 @@ export default function LeaveManagement() {
               </table>
             </div>
           </div>
-        </>
-      ) : (
-        /* Allot Leave View (Admin only) */
-        <div className="space-y-8 py-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="card p-8 bg-white border border-slate-100 shadow-2xl shadow-slate-200/50 rounded-2xl">
-            <div className="flex items-center gap-4 mb-8">
-              <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center">
-                <UserPlus className="w-8 h-8 text-[#2f6645]" />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-slate-900 tracking-tight">Allot Employee Leave</h3>
-                <p className="text-sm text-slate-500">Directly assign leave balance to a specific staff member.</p>
-              </div>
-            </div>
-
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              setIsSaving(true);
-              try {
-                // Pre-validation to prevent negative values
-                if ([allotData.sick, allotData.annual, allotData.other, allotData.casual, allotData.company].some(val => Number(val) < 0)) {
-                  toast.error('Leave values cannot be negative');
-                  setIsSaving(false);
-                  return;
-                }
-
-                const payload = {
-                  userId: Number(allotData.userId),
-                  sick: Number(allotData.sick),
-                  annual: Number(allotData.annual),
-                  other: Number(allotData.other),
-                  casual: Number(allotData.casual),
-                  company: Number(allotData.company)
-                };
-                await leaveAPI.createLeaveAllocation(payload);
-                toast.success('Leave allocated successfully!');
-                setAllotData({ userId: '', sick: '0', annual: '0', other: '0', casual: '0', company: '0' });
-                fetchAllocations();
-              } catch {
-                toast.error('Failed to allot leave');
-              } finally {
-                setIsSaving(false);
-              }
-            }} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-end">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Select Employee</label>
-                  <div className="relative group/select">
-                    <select required className="input h-14 bg-slate-50 border-slate-100 pr-10 cursor-pointer appearance-none" value={allotData.userId} onChange={(e) => setAllotData({ ...allotData, userId: e.target.value })}>
-                      <option value="">Select an employee...</option>
-                      {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name || emp.username}</option>)}
-                    </select>
-                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
-                  </div>
-                </div>
-                {['sick', 'annual', 'casual', 'other', 'company'].map(type => (
-                  <div key={type} className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1 capitalize">{type} Leave</label>
-                    <input required type="number" min="0" className="input h-14 bg-slate-50 border-slate-100" value={allotData[type]} onChange={(e) => setAllotData({ ...allotData, [type]: e.target.value })} />
-                  </div>
-                ))}
-                <div className="flex items-end">
-                  <button type="submit" disabled={isSaving} className="h-14 w-full bg-[#2f6645] text-white rounded-xl flex items-center justify-center gap-3 font-black uppercase tracking-widest shadow-xl">
-                    {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
-                    Allot Leaves
-                  </button>
-                </div>
-              </div>
-            </form>
-
-            {/* List of Allocations */}
-            <div className="mt-12 pt-8 border-t border-slate-200">
-              <h3 className="text-xl font-bold text-slate-900 tracking-tight mb-6">Current Leave Allocations</h3>
-
-              <div className="card overflow-hidden border border-slate-100 shadow-xl shadow-slate-200/50 bg-white rounded-2xl">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 border-b border-slate-200">
-                      <tr>
-                        {['Employee', 'Sick', 'Casual', 'Annual', 'Company', 'Other', 'Total'].map(h => (
-                          <th key={h} className="table-header text-[10px] font-black uppercase tracking-widest text-slate-400 px-6 py-4 text-center first:text-left">
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {allocations.length === 0 ? (
-                        <tr><td colSpan="7" className="px-6 py-8 text-center text-slate-400 text-sm italic font-medium">No allocations found.</td></tr>
-                      ) : allocations.map((al, idx) => {
-                        const empName = employees.find(e => e.id === al.userId?.toString())?.name || `Employee #${al.userId}`;
-                        return (
-                          <tr key={al.id || idx} className="hover:bg-slate-50/50 transition-colors group">
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-xl bg-slate-50 text-emerald-600 flex items-center justify-center font-bold text-[10px] transition-colors border border-slate-100 group-hover:border-emerald-100 group-hover:bg-emerald-50">
-                                  {(empName).substring(0, 2).toUpperCase()}
-                                </div>
-                                <p className="font-bold text-slate-900 group-hover:text-emerald-700 transition-colors">{empName}</p>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-amber-50 text-amber-700 font-black text-xs">{al.sick || 0}</span>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-blue-50 text-blue-700 font-black text-xs">{al.casual || 0}</span>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 font-black text-xs">{al.annual || 0}</span>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-purple-50 text-purple-700 font-black text-xs">{al.company || 0}</span>
-                            </td>
-                            <td className="px-6 py-4 text-center font-bold text-slate-500">
-                              {al.other || 0}
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className="font-black text-[#2f6645] bg-green-100 px-3 py-1 rounded-full text-xs">{(al.sick || 0) + (al.casual || 0) + (al.annual || 0) + (al.company || 0) + (al.other || 0)}</span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Apply Leave Modal (Employee role) */}
       {showApplyModal && (
@@ -613,10 +393,13 @@ export default function LeaveManagement() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Leave Type</label>
                   <select className="input h-14 bg-slate-50" value={formData.type} onChange={e => setFormData({ ...formData, type: e.target.value })}>
-                    <option value="casual">Casual</option>
-                    <option value="sick">Sick</option>
-                    <option value="annual">Annual</option>
-                    <option value="company">Company</option>
+                    <option value="CL">Casual Leave (CL)</option>
+                    <option value="SL">Sick Leave (SL)</option>
+                    <option value="EL">Earned Leave (EL)</option>
+                    <option value="LWP">Leave Without Pay (LWP)</option>
+                    <option value="Maternity">Maternity Leave</option>
+                    <option value="Paternity">Paternity Leave</option>
+                    <option value="CompOff">Compensatory Off</option>
                   </select>
                 </div>
               </div>

@@ -1,11 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useDispatch } from 'react-redux';
+import { setActiveModule } from '../../../store/slices/uiSlice';
 import { Plus, Search, Download, Upload, CheckCircle, Clock, XCircle, X, Eye, ChevronDown, Trash2, Loader2, AlertOctagon } from 'lucide-react';
 import { useApp } from '../../../hooks/useApp';
 import { employeeAPI } from '../services';
+import { authorityAPI } from '../../authority/services';
 import toast from 'react-hot-toast';
 import Skeleton from '../../../components/common/Skeleton';
 export default function EmployeeMaster() {
-    const { setActiveModule, setSelectedEmployee, employees, setEmployees } = useApp();
+    const dispatch = useDispatch();
+    const { setSelectedEmployee, employees, setEmployees } = useApp();
     const [search, setSearch] = useState('');
     const [dept, setDept] = useState('All');
 
@@ -15,33 +19,51 @@ export default function EmployeeMaster() {
     const [isLoading, setIsLoading] = useState(false);
     const [isFetching, setIsFetching] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState({ show: false, id: null, name: '' });
+    
+    // Dynamic Dropdown Data
+    const [dbRoles, setDbRoles] = useState([]);
+    const [dbModules, setDbModules] = useState([]);
 
     const loadEmployees = useCallback(async () => {
         setIsFetching(true);
         try {
-            const res = await employeeAPI.getAllEmployees();
+            // Fetch employees, roles, and modules concurrently to map IDs to names
+            const [res, rolesRes, modulesRes] = await Promise.all([
+                employeeAPI.getAllEmployees(),
+                authorityAPI.getRoles().catch(() => []),
+                authorityAPI.getModules().catch(() => [])
+            ]);
+            
+            const rolesMap = (rolesRes || []).reduce((acc, r) => { acc[r.id || r._id] = r.name; return acc; }, {});
+            const modulesMap = (modulesRes || []).reduce((acc, m) => { acc[m.id || m._id] = m.name; return acc; }, {});
+
             // Robust check for different potential response keys
             const backendEmployees = res?.employees || res?.users || res?.staff || res?.data?.employees || (Array.isArray(res) ? res : (res?.data || []));
             const mapped = (Array.isArray(backendEmployees) ? backendEmployees : []).map(emp => {
                 const rawId = emp.id?.toString() || '0';
                 const paddedId = rawId.padStart(3, '0');
+                
+                // Map the designation and department
+                const resolvedDesignation = emp.designation || rolesMap[emp.designationId] || (emp.designationId !== undefined && emp.designationId !== null ? `Role ID: ${emp.designationId}` : 'N/A');
+                const resolvedDepartment = emp.department || modulesMap[emp.departmentId] || (emp.departmentId !== undefined && emp.departmentId !== null ? `Module ID: ${emp.departmentId}` : 'N/A');
+
                 return {
                     id: emp.id, // KEEP REAL ID FOR API
                     displayId: `EMP-${paddedId}`, // FOR UI ONLY
-                name: emp.name || 'Unknown',
-                designation: emp.designation || 'N/A',
-                department: emp.department || 'HR',
-                doj: emp.dateOfJoining ? new Date(emp.dateOfJoining).toISOString().split('T')[0] : '2024-01-01',
-                basic: Number(emp.sallery || 0) * 0.6, // assumption for breakdown
-                gross: Number(emp.sallery || 0),
-                net: Number(emp.sallery || 0) * 0.9, // assumption
-                pf: emp.pfDeduction ? 'Active' : 'Inactive',
-                esi: emp.esiDeduction || false,
-                pan: emp.pancardNo || '',
-                uan: emp.uanNumber || '',
-                type: emp.type === 'employee' ? 'Permanent' : 'Contract',
-                email: emp.email || '',
-                status: 'Active'
+                    name: emp.name || 'Unknown',
+                    designation: resolvedDesignation,
+                    department: resolvedDepartment,
+                    doj: emp.dateOfJoining ? new Date(emp.dateOfJoining).toISOString().split('T')[0] : '2024-01-01',
+                    basic: Number(emp.basicPay || emp.sallery || 0),
+                    gross: Number(emp.basicPay || emp.sallery || 0) * 1.4, // assuming gross is basic + allowances
+                    net: Number(emp.basicPay || emp.sallery || 0) * 1.4 * 0.9, // assuming 10% deductions on gross
+                    pf: emp.pfApplicable || emp.pfDeduction ? 'Active' : 'Inactive',
+                    esi: emp.esiApplicable || emp.esiDeduction || false,
+                    pan: emp.pancardNo || '',
+                    uan: emp.uanNumber || '',
+                    type: emp.type === 'employee' ? 'Permanent' : 'Contract',
+                    email: emp.email || '',
+                    status: 'Active'
                 };
             });
             setEmployees(mapped);
@@ -55,6 +77,25 @@ export default function EmployeeMaster() {
     useEffect(() => {
         loadEmployees();
     }, [loadEmployees]);
+
+    useEffect(() => {
+        if (isModalOpen) {
+            const fetchDropdownData = async () => {
+                try {
+                    const [rolesRes, modulesRes] = await Promise.all([
+                        authorityAPI.getRoles(),
+                        authorityAPI.getModules()
+                    ]);
+                    setDbRoles(rolesRes || []);
+                    // Filter out authority module as requested
+                    setDbModules((modulesRes || []).filter(m => m.name?.toLowerCase() !== 'authority' && m.code?.toLowerCase() !== 'authority'));
+                } catch (error) {
+                    console.error("Failed to fetch dropdown data:", error);
+                }
+            };
+            fetchDropdownData();
+        }
+    }, [isModalOpen]);
 
     const depts = ['All', ...new Set(employees.map(e => e.department))];
     const filtered = employees.filter(e => {
@@ -76,35 +117,47 @@ export default function EmployeeMaster() {
     const handleAddEmployee = async (e) => {
         e.preventDefault();
         setIsLoading(true);
-        const basic = parseFloat(formData.basic || 0);
-        const gross = parseFloat(formData.gross || (basic * 1.5));
         
         try {
+            // Validation
+            const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+            const aadharRegex = /^\d{12}$/;
+            const uanRegex = /^\d{12}$/;
+            
+            if (formData.pan && !panRegex.test(formData.pan.toUpperCase())) {
+                toast.error("Invalid PAN format. Must be like ABCDE1234F.");
+                setIsLoading(false);
+                return;
+            }
+            if (formData.aadhar && !aadharRegex.test(formData.aadhar)) {
+                toast.error("Invalid Aadhar format. Must be 12 digits.");
+                setIsLoading(false);
+                return;
+            }
+            if (formData.uan && !uanRegex.test(formData.uan)) {
+                toast.error("Invalid UAN format. Must be 12 digits.");
+                setIsLoading(false);
+                return;
+            }
+
             // Build payload exactly as requested
             const payload = {
                 name: formData.name || '',
                 email: formData.email || '',
-                department: formData.department || 'HR',
-                designation: formData.designation || '',
-                dateOfJoining: formData.doj || new Date().toISOString().split('T')[0],
-                sallery: gross,
-                type: formData.type || 'employee',
-                pancardNo: formData.pan || '',
-                aadharNo: formData.aadhar || '',
-                pancardUrl: "https://example.com/pancard/admin",
-                aadharUrl: "https://example.com/aadhar/admin",
-                pfDeduction: !!formData.pf,
-                esiDeduction: !!formData.esi,
-                isAdmin: !!formData.isAdmin,
-                adminId: 1,
+                type: 'employee',
+                dob: formData.dob || '',
+                departmentId: parseInt(formData.departmentId || 0, 10),
+                designationId: parseInt(formData.designationId || 0, 10),
+                employeeCode: (formData.employeeCode || '').toUpperCase(),
+                dateOfJoining: formData.doj || '',
+                employmentType: (formData.type || 'permanent').toLowerCase(),
+                pan: (formData.pan || '').toUpperCase(),
+                addhar: formData.aadhar || '',
                 uanNumber: formData.uan || '',
-                dateOfBirth: formData.dob || '2000-01-01',
-                age: formData.dob ? new Date().getFullYear() - new Date(formData.dob).getFullYear() : 25,
-                roleId: formData.department === 'Admin' ? 0 : 
-                        formData.department === 'General & Administration' ? 1 :
-                        formData.department === 'HR' ? 2 :
-                        formData.department === 'Accounts' ? 3 :
-                        formData.department === 'Marketing' ? 4 : 2 // Default to HR or similar safe role
+                basicPay: parseInt(formData.basic || 0, 10),
+                pfApplicable: !!formData.pf,
+                esiApplicable: !!formData.esi,
+                tdsApplicable: parseInt(formData.tds || 0, 10)
             };
 
             await employeeAPI.createEmployee(payload);
@@ -279,7 +332,7 @@ export default function EmployeeMaster() {
                                     filtered.map((e, i) => (
                                         <tr key={i} className="table-row cursor-pointer hover:bg-slate-50 transition-colors" onClick={() => {
                                             setSelectedEmployee(e);
-                                            setActiveModule('employee-details');
+                                            dispatch(setActiveModule('employee-details'));
                                         }}>
                                             <td className="table-cell font-mono text-blue-500 text-xs font-semibold">{e.displayId}</td>
                                             <td className="table-cell">
@@ -314,7 +367,7 @@ export default function EmployeeMaster() {
                                                     <button 
                                                         onClick={() => {
                                                             setSelectedEmployee(e);
-                                                            setActiveModule('employee-details');
+                                                            dispatch(setActiveModule('employee-details'));
                                                         }}
                                                         className="btn-secondary text-xs py-1 px-3 border border-slate-200 bg-white hover:bg-slate-50 rounded flex items-center gap-1.5"
                                                     >
@@ -369,23 +422,34 @@ export default function EmployeeMaster() {
                                     </div>
 
                                     <div className="space-y-1.5">
-                                        <label className="text-sm font-medium text-slate-700">Designation <span className="text-red-500">*</span></label>
-                                        <input required name="designation" value={formData.designation || ''} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#22c55e]/20 focus:border-[#22c55e] outline-none transition-all" placeholder="e.g. Site Engineer" />
+                                        <label className="text-sm font-medium text-slate-700">Designation / Role <span className="text-red-500">*</span></label>
+                                        <div className="relative group/select">
+                                            <select required name="designationId" value={formData.designationId || ''} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#22c55e]/20 focus:border-[#22c55e] outline-none transition-all bg-white appearance-none pr-8">
+                                                <option value="" disabled>Select Role</option>
+                                                {dbRoles.map(r => (
+                                                    <option key={r.id || r._id} value={r.id || r._id}>{r.name}</option>
+                                                ))}
+                                            </select>
+                                            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-focus-within/select:text-green-600 transition-colors" />
+                                        </div>
                                     </div>
 
                                     <div className="space-y-1.5">
                                         <label className="text-sm font-medium text-slate-700">Department <span className="text-red-500">*</span></label>
                                         <div className="relative group/select">
-                                            <select required name="department" value={formData.department || ''} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#22c55e]/20 focus:border-[#22c55e] outline-none transition-all bg-white appearance-none pr-8">
-                                                <option value="" disabled>Select Department</option>
-                                                <option value="Admin">Admin</option>
-                                                <option value="General & Administration">General & Administration</option>
-                                                <option value="HR">HR</option>
-                                                <option value="Accounts">Accounts</option>
-                                                <option value="Marketing">Marketing</option>
+                                            <select required name="departmentId" value={formData.departmentId || ''} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#22c55e]/20 focus:border-[#22c55e] outline-none transition-all bg-white appearance-none pr-8">
+                                                <option value="" disabled>Select Module</option>
+                                                {dbModules.map(m => (
+                                                    <option key={m.id || m._id} value={m.id || m._id}>{m.name}</option>
+                                                ))}
                                             </select>
                                             <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-focus-within/select:text-green-600 transition-colors" />
                                         </div>
+                                    </div>
+
+                                    <div className="space-y-1.5 md:col-span-1">
+                                        <label className="text-sm font-medium text-slate-700">Employee Code</label>
+                                        <input name="employeeCode" value={formData.employeeCode || ''} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#22c55e]/20 focus:border-[#22c55e] outline-none transition-all uppercase" placeholder="e.g. EMP123" />
                                     </div>
 
                                     <div className="space-y-1.5">
@@ -404,13 +468,6 @@ export default function EmployeeMaster() {
                                             <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none group-focus-within/select:text-green-600 transition-colors" />
                                         </div>
                                     </div>
-
-                                    {formData.type === 'Trainee' && (
-                                        <div className="space-y-1.5 animate-in slide-in-from-top-2 duration-300">
-                                            <label className="text-sm font-medium text-slate-700">Training Duration (Months) <span className="text-red-500">*</span></label>
-                                            <input required type="number" name="duration" value={formData.duration || ''} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#22c55e]/20 focus:border-[#22c55e] outline-none transition-all" placeholder="e.g. 6" />
-                                        </div>
-                                    )}
                                 </div>
                             </div>
 
@@ -424,8 +481,8 @@ export default function EmployeeMaster() {
                                     </div>
 
                                     <div className="space-y-1.5">
-                                        <label className="text-sm font-medium text-slate-700">Gross Salary (₹)</label>
-                                        <input type="number" name="gross" value={formData.gross || ''} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#22c55e]/20 focus:border-[#22c55e] outline-none transition-all" placeholder="e.g. 30000" />
+                                        <label className="text-sm font-medium text-slate-700">TDS Applicable (₹)</label>
+                                        <input type="number" name="tds" value={formData.tds || ''} onChange={handleInputChange} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#22c55e]/20 focus:border-[#22c55e] outline-none transition-all" placeholder="e.g. 0" />
                                     </div>
 
                                     <div className="space-y-1.5">
@@ -450,10 +507,6 @@ export default function EmployeeMaster() {
                                         <label className="flex items-center gap-2 cursor-pointer group">
                                             <input type="checkbox" name="esi" checked={formData.esi || false} onChange={handleInputChange} className="w-4 h-4 text-[#22c55e] rounded border-slate-300 focus:ring-[#22c55e] transition-all" />
                                             <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900">ESI Applicable</span>
-                                        </label>
-                                        <label className="flex items-center gap-2 cursor-pointer group">
-                                            <input type="checkbox" name="isAdmin" checked={formData.isAdmin || false} onChange={handleInputChange} className="w-4 h-4 text-[#22c55e] rounded border-slate-300 focus:ring-[#22c55e] transition-all" />
-                                            <span className="text-sm font-medium text-slate-700 group-hover:text-slate-900">Is Admin</span>
                                         </label>
                                     </div>
                                 </div>

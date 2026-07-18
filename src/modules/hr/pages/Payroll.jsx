@@ -5,6 +5,7 @@ import {
   ShieldCheck, Eye, Fingerprint, Calendar, CheckCircle2 
 } from 'lucide-react';
 import Skeleton from '../../../components/common/Skeleton';
+import EmployeeAvatar from '../../../components/common/EmployeeAvatar';
 import { payrollAPI } from '../services';
 import { employeeAPI } from '../services';
 import toast from 'react-hot-toast';
@@ -38,8 +39,7 @@ export default function Payroll() {
     setIsLoading(true);
     try {
         const res = await payrollAPI.getAllPayrolls();
-        // The API returns either an array directly or inside a data/payrolls key
-        const data = res?.payrolls || (Array.isArray(res) ? res : []);
+        const data = res?.data || res?.payrolls || (Array.isArray(res) ? res : []);
         setSalaries(data);
     } catch (error) {
         console.error('Failed to fetch payrolls:', error);
@@ -51,8 +51,18 @@ export default function Payroll() {
   const fetchEmployees = async () => {
     try {
         const res = await employeeAPI.getAllEmployees();
-        const data = res?.employees || (Array.isArray(res) ? res : []);
-        setEmployees(data);
+        const backendEmployees =
+            res?.employees ||
+            res?.users ||
+            res?.staff ||
+            res?.data?.employees ||
+            (Array.isArray(res) ? res : (res?.data || []));
+        const mapped = (Array.isArray(backendEmployees) ? backendEmployees : []).map(emp => ({
+            id: emp.id,
+            name: emp.name || emp.username || `Staff #${emp.id}`,
+            basicPay: emp.basicPay || emp.salary || 0
+        }));
+        setEmployees(mapped);
     } catch (error) {
         console.error('Failed to fetch employees:', error);
     }
@@ -60,8 +70,9 @@ export default function Payroll() {
   const fetchEmployeeHistory = async (userId) => {
     setIsHistLoading(true);
     try {
-        const res = await payrollAPI.getPayrollByUserId(userId);
-        setEmpHistory(Array.isArray(res) ? res : (res?.payrolls || []));
+        const res = await payrollAPI.getPayrollByEmployeeId(userId);
+        const data = res?.data || res?.payrolls || (Array.isArray(res) ? res : []);
+        setEmpHistory(data);
     } catch (error) {
         console.error('Failed to fetch employee history:', error);
     } finally {
@@ -70,14 +81,29 @@ export default function Payroll() {
   };
   
   const [formData, setFormData] = useState({
-    userId: '', basicPay: 0, hra: 0, conveyance: 0, specialBonus: 0, pfContribution: 0, esi: 0, tdsTax: 0
+    userId: '', basicPay: 0, tds: 0, advanceLoanRecovery: 0, professionalTax: ''
   });
 
-  const calculateSalaryValues = (data) => {
-    const gross = (Number(data.basicPay) || 0) + (Number(data.hra) || 0) + (Number(data.conveyance) || 0) + (Number(data.specialBonus) || 0);
-    const deductions = (Number(data.pfContribution) || 0) + (Number(data.esi) || 0) + (Number(data.tdsTax) || 0) + 200;
-    return { gross, net: gross - deductions };
+  const calculatePreview = () => {
+    const basic = Number(formData.basicPay) || 0;
+    const hra = basic * 0.20;
+    const conveyance = basic * 0.15;
+    const specialAllowance = basic * 0.60;
+    const gross = basic + hra + conveyance + specialAllowance;
+    
+    const pf = basic * 0.12;
+    const esi = gross * 0.0075;
+    const pt = formData.professionalTax ? Number(formData.professionalTax) : (new Date().getMonth() + 1 === 9 ? 200 : 0);
+    const tds = Number(formData.tds) || 0;
+    const advance = Number(formData.advanceLoanRecovery) || 0;
+    
+    const deductions = pf + esi + pt + tds + advance;
+    const net = gross - deductions;
+    
+    return { basic, hra, conveyance, specialAllowance, gross, pf, esi, pt, tds, advance, deductions, net };
   };
+
+  const preview = calculatePreview();
 
   const handleAddSalary = async (e) => {
     e.preventDefault();
@@ -85,28 +111,27 @@ export default function Payroll() {
     
     try {
       const payload = {
-        userId: Number(formData.userId),
-        basicPay: Number(formData.basicPay),
-        hra: Number(formData.hra),
-        conveyance: Number(formData.conveyance),
-        specialBonus: Number(formData.specialBonus),
-        pfContribution: Number(formData.pfContribution),
-        esi: Number(formData.esi),
-        tdsTax: Number(formData.tdsTax)
+        employeeId: Number(formData.userId),
+        payMonth: new Date().getMonth() + 1,
+        payYear: new Date().getFullYear(),
+        basicPay: Number(formData.basicPay) || undefined,
+        tds: Number(formData.tds) || 0,
+        advanceLoanRecovery: Number(formData.advanceLoanRecovery) || 0,
+        professionalTax: formData.professionalTax ? Number(formData.professionalTax) : undefined
       };
 
-      await payrollAPI.createPayroll(payload);
-      toast.success('Salary processed successfully');
+      await payrollAPI.generatePayroll(payload);
+      toast.success('Payroll generated successfully');
       setShowAddModal(false);
-      setFormData({ userId: '', basicPay: 0, hra: 0, conveyance: 0, specialBonus: 0, pfContribution: 0, esi: 0, tdsTax: 0 });
+      setFormData({ userId: '', basicPay: 0, tds: 0, advanceLoanRecovery: 0, professionalTax: '' });
       fetchPayrollData();
     } catch (error) {
         toast.error(error.response?.data?.message || 'Failed to process payroll');
     }
   };
 
-  const totalGross = salaries.reduce((a, e) => a + (e.gross || 0), 0);
-  const totalNet = salaries.reduce((a, e) => a + (e.net || 0), 0);
+  const totalGross = salaries.reduce((a, e) => a + (Number(e.grossSalary) || 0), 0);
+  const totalNet = salaries.reduce((a, e) => a + (Number(e.netSalary) || 0), 0);
 
   // View 1: Payslip Template
   if (view === 'payslip' && selectedEmp) {
@@ -163,7 +188,6 @@ export default function Payroll() {
                </div>
              </div>
 
-             {/* Employee Info */}
              <div className="grid grid-cols-2 gap-12 py-10 border-b border-slate-100">
                <div className="space-y-4">
                   <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Employee Details</h3>
@@ -184,7 +208,6 @@ export default function Payroll() {
                </div>
              </div>
 
-             {/* Table: Earnings & Deductions */}
              <div className="grid grid-cols-1 md:grid-cols-2 gap-16 py-10">
                 <div className="space-y-6">
                    <div className="flex justify-between items-center">
@@ -192,17 +215,14 @@ export default function Payroll() {
                      <p className="text-xs font-bold text-slate-400">Total Earned</p>
                    </div>
                    <div className="space-y-4">
-                      {[
-                        { label: 'Basic Salary', val: Number(selectedEmp.basicPay || 0) },
-                        { label: 'House Rent Allowance (HRA)', val: Number(selectedEmp.hra || 0) },
-                        { label: 'Conveyance Allowance', val: Number(selectedEmp.conveyance || 0) },
-                        { label: 'Performance Bonus', val: Number(selectedEmp.specialBonus || 0) },
-                      ].map((item, i) => (
-                        <div key={i} className="flex justify-between text-sm">
-                           <span className="font-medium text-slate-500">{item.label}</span>
-                           <span className="font-bold text-slate-900">₹{item.val.toLocaleString()}</span>
-                        </div>
-                      ))}
+                     <div className="flex justify-between items-center text-sm font-medium">
+                        <span className="text-slate-500 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500" /> Basic Pay</span>
+                        <span className="text-slate-800">₹{(Number(selectedEmp.basicSalary) || 0).toLocaleString()}</span>
+                     </div>
+                     <div className="flex justify-between items-center text-sm font-medium">
+                        <span className="text-slate-500 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-purple-500" /> Allowances</span>
+                        <span className="text-slate-800">₹{((Number(selectedEmp.hra) || 0) + (Number(selectedEmp.conveyanceAllowance) || 0) + (Number(selectedEmp.specialAllowance) || 0)).toLocaleString()}</span>
+                     </div>
                    </div>
                 </div>
 
@@ -213,10 +233,11 @@ export default function Payroll() {
                    </div>
                    <div className="space-y-4">
                       {[
-                        { label: 'Provident Fund (EPF)', val: Number(selectedEmp.pfContribution || 0) },
-                        { label: 'Employee ESI', val: Number(selectedEmp.esi || 0) },
-                        { label: 'Tax Deducted (TDS)', val: Number(selectedEmp.tdsTax || 0) },
-                        { label: 'Professional Tax (PT)', val: Number(selectedEmp.pt || 200) },
+                        { label: 'Provident Fund (EPF)', val: Number(selectedEmp.employeePf || 0) },
+                        { label: 'Employee ESI', val: Number(selectedEmp.employeeEsi || 0) },
+                        { label: 'Professional Tax (PT)', val: Number(selectedEmp.professionalTax || 0) },
+                        { label: 'Tax Deducted (TDS)', val: Number(selectedEmp.tds || 0) },
+                        { label: 'Advance/Loan Recovery', val: Number(selectedEmp.advanceLoanRecovery || 0) },
                       ].map((item, i) => (
                         <div key={i} className="flex justify-between text-sm">
                            <span className="font-medium text-slate-500">{item.label}</span>
@@ -227,16 +248,15 @@ export default function Payroll() {
                 </div>
              </div>
 
-             {/* Totals */}
              <div className="mt-10 p-10 bg-slate-900 text-white rounded-3xl flex flex-col md:flex-row justify-between items-center gap-8 shadow-2xl">
                 <div className="space-y-1">
                    <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.3em] leading-none mb-3">Net Salary Payable</p>
-                   <p className="text-3xl font-black tracking-tighter">₹{((Number(selectedEmp.basicPay || 0) + Number(selectedEmp.hra || 0) + Number(selectedEmp.conveyance || 0) + Number(selectedEmp.specialBonus || 0)) - (Number(selectedEmp.pfContribution || 0) + Number(selectedEmp.esi || 0) + Number(selectedEmp.tdsTax || 0))).toLocaleString()}</p>
+                   <p className="text-3xl font-black tracking-tighter">₹{Number(selectedEmp.netSalary || 0).toLocaleString()}</p>
                 </div>
                 <div className="text-center md:text-right space-y-2">
                    <p className="text-xs font-medium italic text-white/60">Professional Electronic Payslip</p>
                    <div className="flex gap-4 justify-center md:justify-end">
-                      <div className="px-4 py-2 bg-white/10 rounded-xl text-[10px] font-black uppercase">Gross: ₹{(Number(selectedEmp.basicPay || 0) + Number(selectedEmp.hra || 0) + Number(selectedEmp.conveyance || 0) + Number(selectedEmp.specialBonus || 0)).toLocaleString()}</div>
+                      <div className="px-4 py-2 bg-white/10 rounded-xl text-[10px] font-black uppercase">Gross: ₹{Number(selectedEmp.grossSalary || 0).toLocaleString()}</div>
                       <div className="px-4 py-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl text-[10px] font-black uppercase">Paid via Bank</div>
                    </div>
                 </div>
@@ -256,7 +276,6 @@ export default function Payroll() {
     );
   }
 
-  // View 2: Employee Detail View
   if (view === 'detail' && selectedEmp) {
     return (
       <div className="space-y-8 animate-in fade-in slide-in-from-bottom-5 duration-700 pb-20">
@@ -272,12 +291,11 @@ export default function Payroll() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
            <div className="lg:col-span-8 space-y-8">
-              {/* Stats Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                  {[
-                   { label: 'Basic Salary', val: `₹${(Number(selectedEmp.basicPay) || 0).toLocaleString()}`, icon: Wallet, color: 'blue' },
-                   { label: 'Current Net', val: `₹${((Number(selectedEmp.basicPay || 0) + Number(selectedEmp.hra || 0) + Number(selectedEmp.conveyance || 0) + Number(selectedEmp.specialBonus || 0)) - (Number(selectedEmp.pfContribution || 0) + Number(selectedEmp.esi || 0) + Number(selectedEmp.tdsTax || 0))).toLocaleString()}`, icon: IndianRupee, color: 'emerald' },
-                   { label: 'Total Paid YTD', val: '₹6.2L', icon: TrendingUp, color: 'purple' },
+                   { label: 'Basic Salary', val: `₹${(Number(selectedEmp.basicSalary) || 0).toLocaleString()}`, icon: Wallet, color: 'blue' },
+                   { label: 'Gross Salary', val: `₹${(Number(selectedEmp.grossSalary) || 0).toLocaleString()}`, icon: TrendingUp, color: 'slate' },
+                   { label: 'Net Payable', val: `₹${(Number(selectedEmp.netSalary) || 0).toLocaleString()}`, icon: ShieldCheck, color: 'emerald' },
                  ].map((s, i) => (
                    <div key={i} className="card p-6 border-none shadow-xl shadow-slate-100/50 bg-white">
                       <div className={`p-3 rounded-2xl bg-${s.color}-50 text-${s.color}-600 w-fit mb-4`}>
@@ -289,7 +307,6 @@ export default function Payroll() {
                  ))}
               </div>
 
-              {/* History Timeline */}
               <div className="card p-8 bg-white border-none shadow-xl shadow-slate-100/50">
                  <div className="flex justify-between items-center mb-10">
                    <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider underline underline-offset-8 decoration-[#9ae66e] decoration-4">Salary History</h3>
@@ -325,7 +342,7 @@ export default function Payroll() {
                         <div className="flex items-center gap-12 text-right">
                            <div>
                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Net Credited</p>
-                              <p className="text-lg font-black text-slate-800 tracking-tight">₹{((Number(hist.basicPay || 0) + Number(hist.hra || 0) + Number(hist.conveyance || 0) + Number(hist.specialBonus || 0)) - (Number(hist.pfContribution || 0) + Number(hist.esi || 0) + Number(hist.tdsTax || 0))).toLocaleString()}</p>
+                              <p className="text-lg font-black text-slate-800 tracking-tight">₹{Number(hist.netSalary || 0).toLocaleString()}</p>
                            </div>
                            <button className="p-3 bg-white text-slate-400 rounded-xl group-hover:bg-[#2f6645] group-hover:text-white transition-all shadow-sm">
                               <Download className="w-5 h-5" />
@@ -338,7 +355,6 @@ export default function Payroll() {
            </div>
 
            <div className="lg:col-span-4 space-y-6">
-              {/* Quick Action Card */}
               <div className="card p-8 bg-[#1e3a34] text-white border-none shadow-2xl shadow-green-900/20 relative overflow-hidden group">
                  <div className="absolute -right-4 -bottom-4 w-32 h-32 bg-white/5 rounded-full scale-150 group-hover:scale-[1.8] transition-all duration-700" />
                  <div className="relative z-10 flex flex-col items-center text-center">
@@ -356,7 +372,6 @@ export default function Payroll() {
                  </div>
               </div>
 
-              {/* Composition Chart Mock */}
               <div className="card p-8 bg-white border-none shadow-xl shadow-slate-100/50">
                  <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-8">Earning Composition</h3>
                  <div className="space-y-4">
@@ -383,10 +398,8 @@ export default function Payroll() {
     );
   }
 
-  // View 3: Dashboard
   return (
     <div className="space-y-8 animate-fade-in text-slate-800 pb-10">
-      {/* Header Panel */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-2xl font-black text-slate-800 tracking-tighter leading-none mb-1">Payroll Management</h1>
@@ -409,7 +422,6 @@ export default function Payroll() {
         </div>
       </div>
 
-      {/* Main Stats Bento */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-8 card p-8 bg-white border-none shadow-2xl shadow-slate-100/50 flex flex-col md:flex-row items-center gap-12 overflow-hidden relative group">
           <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-bl-full -mr-16 -mt-16 opacity-50 transition-all duration-700 group-hover:scale-150" />
@@ -480,7 +492,6 @@ export default function Payroll() {
         </div>
       </div>
 
-      {/* Salary Table */}
       <div className="card overflow-hidden">
         <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
@@ -531,25 +542,15 @@ export default function Payroll() {
                 <tr><td colSpan="8" className="p-8 text-center text-slate-400 uppercase text-[10px] font-bold tracking-widest opacity-50">No processed records found</td></tr>
               ) : (
                 salaries.filter(s => activeTab === 'All' || s.status === activeTab).map((e, i) => {
-                  const employee = employees.find(emp => emp.id === e.userId);
-                  const empName = employee?.name || `Emp #${e.userId}`;
                   return (
                     <tr key={i} className="table-row hover:bg-slate-50 transition-colors">
                       <td className="table-cell">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
-                            {empName.split(' ').map(n => n[0]).join('')}
-                          </div>
-                          <div>
-                            <p className="text-slate-900 font-medium">{empName}</p>
-                            <p className="text-slate-400 text-xs">{employee?.designation || 'Employee'}</p>
-                          </div>
-                        </div>
+                        <EmployeeAvatar employeeId={e.employeeId || e.userId} employeesList={employees} />
                       </td>
-                      <td className="table-cell text-slate-700 font-medium">₹{(Number(e.basicPay) || 0).toLocaleString()}</td>
-                      <td className="table-cell text-slate-900 font-semibold">₹{(Number(e.basicPay || 0) + Number(e.hra || 0) + Number(e.conveyance || 0) + Number(e.specialBonus || 0)).toLocaleString()}</td>
-                      <td className="table-cell text-red-500 font-medium">₹{(Number(e.pfContribution || 0) + Number(e.esi || 0) + Number(e.tdsTax || 0)).toLocaleString()}</td>
-                      <td className="table-cell text-emerald-600 font-bold">₹{((Number(e.basicPay || 0) + Number(e.hra || 0) + Number(e.conveyance || 0) + Number(e.specialBonus || 0)) - (Number(e.pfContribution || 0) + Number(e.esi || 0) + Number(e.tdsTax || 0))).toLocaleString()}</td>
+                      <td className="px-6 py-4 font-bold text-slate-800">₹{Number(e.basicSalary || 0).toLocaleString()}</td>
+                      <td className="px-6 py-4 font-bold text-slate-800">₹{Number(e.grossSalary || 0).toLocaleString()}</td>
+                      <td className="px-6 py-4 font-bold text-rose-600">-₹{Number(e.deductions || 0).toLocaleString()}</td>
+                      <td className="px-6 py-4 font-black text-indigo-600">₹{Number(e.netSalary || 0).toLocaleString()}</td>
                       <td className="table-cell text-slate-500 text-xs">{selectedMonth}</td>
                       <td className="table-cell">
                         <span className={`badge ${e.status === 'Processed' ? 'badge-green' : 'badge-yellow'}`}>{e.status}</span>
@@ -571,7 +572,6 @@ export default function Payroll() {
         </div>
       </div>
 
-      {/* Add Salary Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" onClick={() => setShowAddModal(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -582,58 +582,69 @@ export default function Payroll() {
               </div>
               <button onClick={() => setShowAddModal(false)} className="p-1 hover:bg-white/10 rounded-lg"><X className="w-5 h-5" /></button>
             </div>
-            <form onSubmit={handleAddSalary} className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
-              <div className="grid grid-cols-1 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-slate-600">Select Employee</label>
-                  <div className="relative group/select">
-                    <select required className="input pr-10 appearance-none bg-white" value={formData.userId} onChange={e => setFormData({...formData, userId: e.target.value})}>
-                        <option value="">Choose employee...</option>
-                        {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+            <form onSubmit={handleAddSalary} className="p-6 space-y-4">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Employee</label>
+                  <div className="relative mt-1">
+                    <select value={formData.userId} onChange={e => {
+                        const emp = employees.find(emp => String(emp.id) === String(e.target.value));
+                        setFormData({ ...formData, userId: e.target.value, basicPay: emp?.basicPay || 0 });
+                    }} className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-[#2f6645] transition-all appearance-none cursor-pointer">
+                      <option value="" disabled>Select Employee</option>
+                      {Array.isArray(employees) && employees.map(e => <option key={e.id} value={e.id}>{e.name || e.username || `Staff #${e.id}`}</option>)}
                     </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
                 </div>
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-500 mb-3">Earnings (Monthly)</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {[
-                    { l: 'Basic Pay', key: 'basicPay' }, 
-                    { l: 'HRA', key: 'hra' }, 
-                    { l: 'Conveyance', key: 'conveyance' }, 
-                    { l: 'Special/Bonus', key: 'specialBonus' }
-                  ].map((item, i) => (
-                    <div key={i} className="space-y-1.5">
-                      <label className="text-xs text-slate-500">{item.l}</label>
-                      <input type="number" required placeholder="0" className="input" value={formData[item.key]} onChange={e => setFormData({...formData, [item.key]: e.target.value})} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-500 mb-3">Deductions (EPF/Tax)</p>
-                <div className="grid grid-cols-3 gap-3">
-                  {[
-                    { l: 'PF Contribution', key: 'pfContribution' }, 
-                    { l: 'ESI', key: 'esi' }, 
-                    { l: 'TDS / Tax', key: 'tdsTax' }
-                  ].map((item, i) => (
-                    <div key={i} className="space-y-1.5">
-                      <label className="text-xs text-slate-500">{item.l}</label>
-                      <input type="number" required placeholder="0" className="input" value={formData[item.key]} onChange={e => setFormData({...formData, [item.key]: e.target.value})} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
+
                 <div>
-                  <p className="text-xs text-slate-500">Estimated Net Salary</p>
-                  <p className="text-xl font-bold text-emerald-600">₹{calculateSalaryValues(formData).net.toLocaleString()}</p>
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Basic Pay Override (₹)</label>
+                    <input type="number" required value={formData.basicPay} onChange={e => setFormData({ ...formData, basicPay: e.target.value })} className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all mt-1" />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">TDS (₹)</label>
+                        <input type="number" value={formData.tds} onChange={e => setFormData({ ...formData, tds: e.target.value })} className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all mt-1" />
+                    </div>
+                    <div>
+                        <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Advance / Loan Recovery (₹)</label>
+                        <input type="number" value={formData.advanceLoanRecovery} onChange={e => setFormData({ ...formData, advanceLoanRecovery: e.target.value })} className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all mt-1" />
+                    </div>
+                </div>
+                <div>
+                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Professional Tax (₹) - Overrides Sept logic</label>
+                    <input type="number" placeholder="Optional" value={formData.professionalTax} onChange={e => setFormData({ ...formData, professionalTax: e.target.value })} className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all mt-1" />
+                </div>
+
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mt-6 text-sm">
+                    <h3 className="text-xs font-black uppercase text-slate-500 tracking-widest mb-3">Live Calculation Preview</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                            <div className="flex justify-between"><span className="text-slate-500">Basic</span><span className="font-bold">₹{preview.basic.toLocaleString()}</span></div>
+                            <div className="flex justify-between"><span className="text-slate-500">HRA (20%)</span><span className="font-bold">₹{preview.hra.toLocaleString()}</span></div>
+                            <div className="flex justify-between"><span className="text-slate-500">Conveyance (15%)</span><span className="font-bold">₹{preview.conveyance.toLocaleString()}</span></div>
+                            <div className="flex justify-between"><span className="text-slate-500">Spl Allow (60%)</span><span className="font-bold">₹{preview.specialAllowance.toLocaleString()}</span></div>
+                            <div className="flex justify-between pt-2 border-t border-slate-200"><span className="font-bold text-slate-700">Gross</span><span className="font-black text-slate-900">₹{preview.gross.toLocaleString()}</span></div>
+                        </div>
+                        <div className="space-y-1">
+                            <div className="flex justify-between"><span className="text-slate-500">PF (12%)</span><span className="font-bold text-rose-500">₹{preview.pf.toLocaleString()}</span></div>
+                            <div className="flex justify-between"><span className="text-slate-500">ESI (0.75%)</span><span className="font-bold text-rose-500">₹{preview.esi.toLocaleString()}</span></div>
+                            <div className="flex justify-between"><span className="text-slate-500">PT / TDS</span><span className="font-bold text-rose-500">₹{(preview.pt + preview.tds).toLocaleString()}</span></div>
+                            <div className="flex justify-between"><span className="text-slate-500">Advance</span><span className="font-bold text-rose-500">₹{preview.advance.toLocaleString()}</span></div>
+                            <div className="flex justify-between pt-2 border-t border-slate-200"><span className="font-bold text-slate-700">Deductions</span><span className="font-black text-rose-600">₹{preview.deductions.toLocaleString()}</span></div>
+                        </div>
+                    </div>
+                </div>
+
+              <div className="flex items-center justify-between p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                <div>
+                  <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest">Net Salary Payable</p>
+                  <p className="text-2xl font-black text-indigo-600">₹{preview.net.toLocaleString()}</p>
                 </div>
                 <div className="flex gap-3">
-                  <button type="button" onClick={() => setShowAddModal(false)} className="btn-secondary">Cancel</button>
-                  <button type="submit" className="btn-primary">Submit & Process</button>
+                  <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 bg-white text-slate-500 hover:text-slate-700 rounded-xl font-bold transition-all shadow-sm">Cancel</button>
+                  <button type="submit" className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-all shadow-md shadow-indigo-200">Generate Payroll</button>
                 </div>
               </div>
             </form>

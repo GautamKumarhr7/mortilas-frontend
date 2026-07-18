@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useDispatch } from 'react-redux';
+import { setActiveModule } from '../../../store/slices/uiSlice';
 import { useApp } from '../../../hooks/useApp';
 import {
     ArrowLeft, Mail, Phone, MapPin, Briefcase, Calendar,
@@ -10,7 +12,8 @@ import { employeeAPI } from '../services';
 import toast from 'react-hot-toast';
 
 export default function EmployeeDetails() {
-    const { selectedEmployee, setActiveModule, updateEmployee } = useApp();
+    const dispatch = useDispatch();
+    const { selectedEmployee, updateEmployee } = useApp();
     const [isEditing, setIsEditing] = useState(false);
     const [editData, setEditData] = useState(null);
     const [activeTab, setActiveTab] = useState('Overview');
@@ -22,7 +25,7 @@ export default function EmployeeDetails() {
                 <h2 className="text-xl font-bold text-slate-800">No Employee Selected</h2>
                 <p className="text-slate-500 mt-2">Please go back to the Employee Master and select an employee.</p>
                 <button
-                    onClick={() => setActiveModule('employee-master')}
+                    onClick={() => dispatch(setActiveModule('employee-master'))}
                     className="mt-6 btn-primary flex items-center gap-2"
                 >
                     <ArrowLeft className="w-4 h-4" /> Back to List
@@ -77,7 +80,7 @@ export default function EmployeeDetails() {
                 
                 await employeeAPI.deleteEmployee(numericId);
                 toast.success('Employee deleted successfully!');
-                setActiveModule('employee-master');
+                dispatch(setActiveModule('employee-master'));
             } catch (error) {
                 console.error('Failed to delete employee:', error);
                 toast.error(error.response?.data?.message || 'Failed to delete employee');
@@ -93,7 +96,7 @@ export default function EmployeeDetails() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
                     <button
-                        onClick={() => setActiveModule('employee-master')}
+                        onClick={() => dispatch(setActiveModule('employee-master'))}
                         className="p-2 hover:bg-white rounded-full transition-colors border border-transparent hover:border-slate-200"
                     >
                         <ArrowLeft className="w-5 h-5 text-slate-600" />
@@ -105,7 +108,7 @@ export default function EmployeeDetails() {
                         <nav className="flex text-sm text-slate-500 mt-1">
                             <span>HR Management</span>
                             <span className="mx-2">/</span>
-                            <span className="hover:text-[#2f6645] cursor-pointer" onClick={() => setActiveModule('employee-master')}>Employee Master</span>
+                            <span className="hover:text-[#2f6645] cursor-pointer" onClick={() => dispatch(setActiveModule('employee-master'))}>Employee Master</span>
                             <span className="mx-2">/</span>
                             <span className="text-slate-900 font-medium">{selectedEmployee.name}</span>
                         </nav>

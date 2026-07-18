@@ -289,7 +289,7 @@ export default function Dashboard() {
                             {isLoading ? (
                                 <Skeleton className="w-full h-full rounded-xl" />
                             ) : (
-                                <ResponsiveContainer width="100%" height="100%">
+                                <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                     <AreaChart data={revenueData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
 
                                         <defs>
@@ -319,7 +319,7 @@ export default function Dashboard() {
                         <h3 className="section-title text-xl text-slate-900 font-bold mb-1 w-full text-left">Projects by Type</h3>
                         <p className="text-slate-500 text-sm mb-6 w-full text-left">Category distribution</p>
                         <div className="w-full relative flex items-center justify-center h-[200px]">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                 <PieChart>
 
                                     <Pie data={projectData} cx="50%" cy="50%" innerRadius={60} outerRadius={90}
@@ -366,7 +366,7 @@ export default function Dashboard() {
                         <h3 className="section-title text-xl text-slate-900 font-bold mb-1 w-full text-left">Department Distribution</h3>
                         <p className="text-slate-500 text-sm mb-6 w-full text-left">Employees by department</p>
                         <div className="w-full relative flex items-center justify-center h-[200px]">
-                            <ResponsiveContainer width="100%" height="100%">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                                 <PieChart>
                                     <Pie data={projectData} cx="50%" cy="50%" innerRadius={60} outerRadius={90}
                                         dataKey="value" paddingAngle={5} stroke="none">

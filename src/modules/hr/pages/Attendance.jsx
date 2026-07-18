@@ -4,17 +4,22 @@ import Skeleton from '../../../components/common/Skeleton';
 import { attendanceAPI } from '../services';
 import { useApp } from '../../../hooks/useApp';
 import { employeeAPI } from '../services';
+import { formatUTCtoLocal, calculateDurationMinutes } from '../../../utils/timeUtils';
 
 export default function Attendance() {
   const { userRole, userProfile } = useApp();
   const [attendance, setAttendance] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('date') || '';
+  });
   const [filter, setFilter] = useState('All');
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
   const [toast, setToast] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isPunching, setIsPunching] = useState(false);
 
   const fetchEmployees = useCallback(async () => {
     try {
@@ -34,7 +39,6 @@ export default function Attendance() {
     setIsLoading(true);
     try {
       let res;
-      // Fetch all attendance for admin/HR, restrict for employee if needed (you can adjust this later)
       if (userRole === 'employee') {
           res = await attendanceAPI.getUserLogs(userProfile?.id || userProfile?.userId || 1);
       } else {
@@ -45,31 +49,14 @@ export default function Attendance() {
         ? rawResponse 
         : (rawResponse?.attendanceLogs || rawResponse?.logs || rawResponse?.data || []);
       
-      const formatted = (Array.isArray(logs) ? logs : []).map(log => {
-          const emp = log.user || employees.find(e => e.id === log.userId?.toString());
-          const name = emp?.name || emp?.username || `User #${log.userId}`;
-          
-          return {
-              id: log.id,
-              userId: log.userId,
-              name: name || 'Unknown',
-              empId: `EMP-${log.userId}`,
-              date: log.attendanceDate ? new Date(log.attendanceDate).toLocaleDateString('en-GB') : 'Unknown',
-              rawDate: log.attendanceDate,
-              checkIn: log.clockIn ? new Date(log.clockIn).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '-',
-              checkOut: log.clockOut ? new Date(log.clockOut).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '-',
-              workHours: log.workingHours || 0,
-              status: log.clockOut ? 'Present' : 'Active'
-          };
-      });
-      setAttendance(formatted);
+      setAttendance(logs);
     } catch (error) {
       console.error('Failed to fetch attendance:', error);
       showToast('Failed to load attendance logs', 'error');
     } finally {
       setIsLoading(false);
     }
-  }, [employees, userProfile?.id, userProfile?.userId, userRole]);
+  }, [userProfile?.id, userProfile?.userId, userRole]);
 
   useEffect(() => {
     fetchEmployees();
@@ -81,12 +68,144 @@ export default function Attendance() {
     return () => clearInterval(timer);
   }, []);
 
+  const handleDateChange = (e) => {
+      const newDate = e.target.value;
+      setSelectedDate(newDate);
+      const url = new URL(window.location);
+      if (newDate) {
+          url.searchParams.set('date', newDate);
+      } else {
+          url.searchParams.delete('date');
+      }
+      window.history.pushState({}, '', url);
+  };
+
+  const handlePunch = async (type) => {
+      setIsPunching(true);
+      try {
+          // ALWAYS send UTC time to backend to prevent timezone issues!
+          const now = new Date();
+          const timeString = now.toISOString().split('T')[1].substring(0, 8); // UTC HH:mm:ss
+          const dateString = now.toISOString().split('T')[0]; // UTC YYYY-MM-DD
+          
+          const payload = {
+              employeeId: userProfile?.id || userProfile?.userId || 1,
+              date: dateString,
+              punchTime: timeString,
+              punchType: type,
+              attendanceType: "mannual",
+              status: "ontime"
+          };
+          
+          await attendanceAPI.createAttendance(payload);
+          showToast(`Successfully clocked ${type}`, 'success');
+          await fetchAttendance();
+      } catch (error) {
+          console.error("Punch error:", error);
+          showToast(`Failed to clock ${type}`, 'error');
+      } finally {
+          setIsPunching(false);
+      }
+  };
+
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
 
-  const filteredAttendance = (attendance || []).filter(item => {
+  const formattedAttendance = [];
+  const grouped = {};
+
+  (attendance || []).forEach(log => {
+      const empId = log.employeeId || log.userId;
+      const date = log.date || log.attendanceDate;
+      if (!empId || !date) return;
+      
+      const key = `${empId}_${date}`;
+      if (!grouped[key]) {
+          grouped[key] = {
+              userId: empId,
+              date: date,
+              checkIn: null,
+              checkOut: null,
+              backendStatus: log.status, // use the true backend status
+              logs: log.logs || [], // store logs for duration calc
+              logIds: []
+          };
+      }
+      
+      grouped[key].logIds.push(log.id);
+      
+      if (log.punchType === 'in' || log.clockIn) {
+          grouped[key].checkIn = log.punchTime || log.clockIn;
+      } else if (log.punchType === 'out' || log.clockOut) {
+          grouped[key].checkOut = log.punchTime || log.clockOut;
+      }
+      
+      // If we have an explicit clockOut but no checkOut yet, assign it
+      if (log.clockOut && !grouped[key].checkOut) {
+          grouped[key].checkOut = log.clockOut;
+      }
+  });
+
+  Object.values(grouped).forEach(group => {
+      const emp = employees.find(e => e.id === group.userId?.toString());
+      const name = emp?.name || emp?.username || `User #${group.userId}`;
+      
+      // Calculate work hours using logs
+      let workHours = '00:00';
+      if (group.logs && group.logs.length > 0) {
+          let totalMins = 0;
+          let currentIn = null;
+          
+          for (let i = 0; i < group.logs.length; i++) {
+              const log = group.logs[i];
+              // Use explicit punchType if available, otherwise assume alternating IN/OUT
+              const type = log.punchType ? log.punchType : (i % 2 === 0 ? 'in' : 'out');
+              
+              if (type === 'in') {
+                  currentIn = log.punchTime;
+              } else if (type === 'out' && currentIn) {
+                  totalMins += calculateDurationMinutes(currentIn, log.punchTime);
+                  currentIn = null; // Reset for next pair
+              }
+          }
+          if (totalMins > 0) {
+              const h = Math.floor(totalMins / 60);
+              const m = totalMins % 60;
+              workHours = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+          }
+      } else if (group.checkIn && group.checkOut) {
+          const diffMins = calculateDurationMinutes(group.checkIn, group.checkOut);
+          if (diffMins > 0) {
+              const h = Math.floor(diffMins / 60);
+              const m = diffMins % 60;
+              workHours = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+          }
+      }
+      
+      formattedAttendance.push({
+          id: group.logIds.join('_'),
+          userId: group.userId,
+          name: name || 'Unknown',
+          empId: `EMP-${group.userId}`,
+          date: group.date ? new Date(group.date).toLocaleDateString('en-GB') : 'Unknown',
+          rawDate: group.date,
+          checkIn: formatUTCtoLocal(group.date, group.checkIn),
+          checkOut: formatUTCtoLocal(group.date, group.checkOut),
+          workHours: workHours,
+          logs: (group.logs || []).map((l, i) => ({
+              type: l.punchType ? l.punchType : (i % 2 === 0 ? 'in' : 'out'),
+              time: formatUTCtoLocal(group.date, l.punchTime)
+          })),
+          status: group.backendStatus === 'in' ? 'Active' : 'Present'
+      });
+  });
+
+  // Sort by date descending
+  formattedAttendance.sort((a, b) => new Date(b.rawDate) - new Date(a.rawDate));
+
+  const filteredAttendance = formattedAttendance.filter(item => {
     const itemName = item?.name || '';
     const itemEmpId = item?.empId || '';
     const matchesSearch = itemName.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -95,6 +214,10 @@ export default function Attendance() {
     const matchesDate = !selectedDate || (item.rawDate && item.rawDate.startsWith(selectedDate));
     return matchesSearch && matchesFilter && matchesDate;
   });
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const myTodayLogs = formattedAttendance.filter(a => a.userId === (userProfile?.id || userProfile?.userId || 1) && a.rawDate && a.rawDate.startsWith(todayStr));
+  const hasActivePunch = myTodayLogs.some(a => a.status === 'Active');
 
   return (
     <div className="space-y-6 animate-fade-in text-slate-800 pb-10">
@@ -135,8 +258,8 @@ export default function Attendance() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               {[
-                { label: 'Present Today', val: attendance.filter(a => a.status === 'Present').length, color: 'bg-emerald-500', sub: '+2 from avg' },
-                { label: 'Late Arrivals', val: attendance.filter(a => a.status === 'Late').length, color: 'bg-amber-500', sub: 'Action required' },
+                { label: 'Present Today', val: formattedAttendance.filter(a => a.status === 'Present').length, color: 'bg-emerald-500', sub: '+2 from avg' },
+                { label: 'Late Arrivals', val: formattedAttendance.filter(a => a.status === 'Late').length, color: 'bg-amber-500', sub: 'Action required' },
                 { label: 'On Leave', val: '00', color: 'bg-blue-500', sub: 'Planned' },
                 { label: 'Average Hours', val: '8.5', color: 'bg-purple-500', sub: 'Standard shift' },
               ].map((s, i) => (
@@ -154,18 +277,40 @@ export default function Attendance() {
         </div>
 
         {/* Quick Summary Sidebar */}
-        <div className="md:col-span-4 space-y-4">
-          <div className="card p-6 bg-[#1e3a34] text-white border-none shadow-xl shadow-green-900/10">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
-                <UserCheck className="w-5 h-5 text-[#9ae66e]" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black text-white/40 uppercase tracking-widest leading-none">Active Shift</p>
-                <p className="text-xs font-bold">General (09:00 - 18:00)</p>
-              </div>
+        <div className="md:col-span-4 space-y-4 flex flex-col">
+          <div className="card p-6 bg-[#1e3a34] text-white border-none shadow-xl shadow-green-900/10 flex-1 flex flex-col justify-between">
+            <div>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
+                    <UserCheck className="w-5 h-5 text-[#9ae66e]" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-white/40 uppercase tracking-widest leading-none">Active Shift</p>
+                    <p className="text-xs font-bold">General (09:00 - 18:00)</p>
+                  </div>
+                </div>
+                <p className="text-[10px] leading-relaxed opacity-60 italic mb-6">"Ensure all manual logs are verified before EOD for accurate payroll processing."</p>
             </div>
-            <p className="text-[10px] leading-relaxed opacity-60 italic">"Ensure all manual logs are verified before EOD for accurate payroll processing."</p>
+            
+            <div className="mt-auto">
+                {!hasActivePunch ? (
+                    <button 
+                        onClick={() => handlePunch('in')} 
+                        disabled={isPunching}
+                        className="w-full bg-[#9ae66e] text-[#1e3a34] font-black py-3 rounded-xl hover:bg-emerald-400 transition-colors shadow-lg active:scale-[0.98]"
+                    >
+                        {isPunching ? 'Punching...' : 'Clock In'}
+                    </button>
+                ) : (
+                    <button 
+                        onClick={() => handlePunch('out')} 
+                        disabled={isPunching}
+                        className="w-full bg-red-500 text-white font-black py-3 rounded-xl hover:bg-red-600 transition-colors shadow-lg active:scale-[0.98]"
+                    >
+                        {isPunching ? 'Punching...' : 'Clock Out'}
+                    </button>
+                )}
+            </div>
           </div>
         </div>
       </div>
@@ -180,7 +325,7 @@ export default function Attendance() {
                 type="date" 
                 className="input pl-10 bg-white w-40"
                 value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
+                onChange={handleDateChange}
               />
             </div>
             <div className="relative flex-1">
@@ -212,8 +357,7 @@ export default function Attendance() {
               <tr className="bg-slate-50 border-b border-slate-200">
                 <th className="table-header">Employee</th>
                 <th className="table-header">Date</th>
-                <th className="table-header">Clock In</th>
-                <th className="table-header">Clock Out</th>
+                <th className="table-header">Punches (IN/OUT)</th>
                 <th className="table-header">Duration</th>
                 <th className="table-header">Status</th>
               </tr>
@@ -224,8 +368,7 @@ export default function Attendance() {
                   <tr key={i} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-4"><div className="flex items-center gap-3"><Skeleton variant="circle" className="w-8 h-8" /><Skeleton variant="text" className="w-24" /></div></td>
                     <td className="px-6 py-4"><Skeleton variant="text" className="w-16" /></td>
-                    <td className="px-6 py-4"><Skeleton variant="text" className="w-12" /></td>
-                    <td className="px-6 py-4"><Skeleton variant="text" className="w-12" /></td>
+                    <td className="px-6 py-4"><Skeleton variant="text" className="w-24" /></td>
                     <td className="px-6 py-4"><Skeleton variant="text" className="w-12" /></td>
                     <td className="px-6 py-4"><Skeleton variant="badge" /></td>
                   </tr>
@@ -254,12 +397,26 @@ export default function Attendance() {
                       </div>
                     </td>
                     <td className="table-cell font-bold text-slate-500 text-xs uppercase tracking-tighter">{row.date}</td>
-                    <td className="table-cell font-black text-emerald-600 text-xs uppercase">{row.checkIn}</td>
-                    <td className="table-cell font-black text-slate-600 text-xs uppercase">{row.checkOut}</td>
+                    <td className="table-cell">
+                      <div className="flex flex-wrap gap-1 max-w-[150px]">
+                        {row.logs && row.logs.length > 0 ? row.logs.map((logObj, idx) => (
+                          <span key={idx} className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${logObj.type === 'in' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {logObj.type.toUpperCase()}: {logObj.time}
+                          </span>
+                        )) : (
+                          <>
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-100 text-emerald-700">IN: {row.checkIn}</span>
+                            {row.checkOut && row.checkOut !== '-' && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-rose-100 text-rose-700">OUT: {row.checkOut}</span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </td>
                     <td className="table-cell">
                       <div className="flex flex-col gap-1">
-                        <span className="text-[10px] font-black text-slate-400">09:00 → 18:00</span>
-                        <span className="badge bg-slate-100 text-slate-700 w-fit">{row.workHours} Hrs</span>
+                        <span className="text-[10px] font-black text-slate-400">Total</span>
+                        <span className="badge bg-slate-100 text-slate-700 w-fit">{row.workHours}</span>
                       </div>
                     </td>
                     <td className="table-cell">

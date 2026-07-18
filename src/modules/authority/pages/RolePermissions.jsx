@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, ChevronDown, ChevronUp, Loader2, Save, Check } from 'lucide-react';
+import { Loader2, Save } from 'lucide-react';
 import { authorityAPI } from '../services';
 import toast from 'react-hot-toast';
+
+import RoleSelector from '../components/RoleSelector';
+import ModuleAccordion from '../components/ModuleAccordion';
+import SubmodulePermissions from '../components/SubmodulePermissions';
 
 export default function RolePermissions() {
     const [roles, setRoles] = useState([]);
@@ -217,23 +221,11 @@ export default function RolePermissions() {
                 </button>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <div className="max-w-md">
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">Select Role <span className="text-red-500">*</span></label>
-                    <select
-                        value={selectedRole}
-                        onChange={(e) => setSelectedRole(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#2f6645]/20 focus:border-[#2f6645] transition-all"
-                    >
-                        <option value="">-- Choose a Role --</option>
-                        {roles.map(role => (
-                            <option key={role.id || role._id} value={role.id || role._id}>
-                                {role.name} ({role.code})
-                            </option>
-                        ))}
-                    </select>
-                </div>
-            </div>
+            <RoleSelector 
+                roles={roles} 
+                selectedRole={selectedRole} 
+                onSelectRole={setSelectedRole} 
+            />
 
             {selectedRole && (
                 <div className="space-y-4">
@@ -245,79 +237,21 @@ export default function RolePermissions() {
                         const isSubmodulesLoading = loadingSubmodules[moduleId];
 
                         return (
-                            <div key={moduleId} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                                <button
-                                    onClick={() => toggleModule(moduleId)}
-                                    className="w-full px-6 py-4 flex items-center justify-between bg-white hover:bg-slate-50 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
-                                            <Shield className="w-5 h-5" />
-                                        </div>
-                                        <span className="font-semibold text-slate-800 text-left">{module.name}</span>
-                                    </div>
-                                    {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
-                                </button>
-
-                                {isExpanded && (
-                                    <div className="px-6 pb-6 pt-2 border-t border-slate-100 bg-slate-50/50">
-                                        {isSubmodulesLoading ? (
-                                            <div className="py-8 flex justify-center">
-                                                <Loader2 className="w-6 h-6 text-slate-400 animate-spin" />
-                                            </div>
-                                        ) : submodules.length === 0 ? (
-                                            <div className="py-8 text-center text-slate-500 text-sm">
-                                                No submodules found for this module.
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-4 mt-4">
-                                                {submodules.map(submodule => {
-                                                    const subModuleId = submodule.id || submodule._id;
-                                                    const subModulePerms = selectedPermissions[subModuleId] || {};
-                                                    const isAllSelected = permissions.length > 0 && permissions.every(p => subModulePerms[p.id || p._id]);
-
-                                                    return (
-                                                        <div key={subModuleId} className="bg-white p-4 rounded-xl border border-slate-200">
-                                                            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
-                                                                <h4 className="font-semibold text-slate-700">{submodule.name}</h4>
-                                                                <button
-                                                                    onClick={() => handleSelectAllSubmodule(subModuleId, !isAllSelected)}
-                                                                    className={`text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${isAllSelected ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                                                                >
-                                                                    {isAllSelected ? 'Deselect All' : 'Select All'}
-                                                                </button>
-                                                            </div>
-                                                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                                                                {permissions.map(permission => {
-                                                                    const permissionId = permission.id || permission._id;
-                                                                    const isSelected = !!subModulePerms[permissionId];
-                                                                    return (
-                                                                        <label 
-                                                                            key={permissionId}
-                                                                            onClick={(e) => {
-                                                                                e.preventDefault();
-                                                                                togglePermission(subModuleId, permissionId);
-                                                                            }}
-                                                                            className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all ${isSelected ? 'border-[#2f6645] bg-green-50' : 'border-slate-200 hover:border-slate-300'}`}
-                                                                        >
-                                                                            <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 ${isSelected ? 'bg-[#2f6645]' : 'bg-white border border-slate-300'}`}>
-                                                                                {isSelected && <Check className="w-3 h-3 text-white" />}
-                                                                            </div>
-                                                                            <span className={`text-sm select-none truncate ${isSelected ? 'text-[#2f6645] font-medium' : 'text-slate-600'}`}>
-                                                                                {permission.name}
-                                                                            </span>
-                                                                        </label>
-                                                                    );
-                                                                })}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
+                            <ModuleAccordion 
+                                key={moduleId}
+                                module={module}
+                                isExpanded={isExpanded}
+                                onToggle={() => toggleModule(moduleId)}
+                            >
+                                <SubmodulePermissions 
+                                    submodules={submodules}
+                                    isLoading={isSubmodulesLoading}
+                                    permissions={permissions}
+                                    selectedPermissions={selectedPermissions}
+                                    onTogglePermission={togglePermission}
+                                    onSelectAll={handleSelectAllSubmodule}
+                                />
+                            </ModuleAccordion>
                         );
                     })}
                 </div>

@@ -47,6 +47,7 @@ const Login = () => {
       // 5. Dispatch auth success
       dispatch(loginSuccess({
         token: accessToken,
+        refreshToken: refreshToken,
         roleId: roleId || userRole,
         userProfile: profile
       }));
@@ -203,7 +204,7 @@ const Login = () => {
           </form>
 
           <p className="mt-8 text-center text-slate-500 text-sm">
-            Don't have an account? <a href="#" className="font-bold text-[#2f6645] hover:underline">Contact Administrator</a>
+            Don't have an account? <a href="/register" className="font-bold text-[#2f6645] hover:underline">Apply Here</a>
           </p>
         </div>
       </div>

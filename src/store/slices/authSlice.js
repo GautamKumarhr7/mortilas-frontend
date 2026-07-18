@@ -19,14 +19,15 @@ const authSlice = createSlice({
   initialState,
   reducers: {
     loginSuccess: (state, action) => {
-      const { token, roleId, userProfile } = action.payload;
+      const { token, refreshToken, roleId, userProfile } = action.payload;
       state.token = token;
       state.roleId = roleId;
       state.userProfile = userProfile;
       state.isLoggedIn = true;
       
-      localStorage.setItem('accessToken', token);
-      localStorage.setItem('userRole', roleId);
+      if (token) localStorage.setItem('accessToken', token);
+      if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
+      if (roleId) localStorage.setItem('userRole', roleId);
       if (userProfile) {
         localStorage.setItem('userProfile', JSON.stringify(userProfile));
       }

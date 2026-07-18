@@ -40,6 +40,7 @@ import EmployeeDetails from '../modules/hr/pages/EmployeeDetails';
 import EmployeeMaster from '../modules/hr/pages/EmployeeMaster';
 import LeaveManagement from '../modules/hr/pages/LeaveManagement';
 import Payroll from '../modules/hr/pages/Payroll';
+import Recruitment from '../modules/hr/pages/Recruitment';
 import Reimbursements from '../modules/hr/pages/Reimbursements';
 import StatutoryCompliance from '../modules/hr/pages/StatutoryCompliance';
 import Dashboard from '../modules/dashboard/pages/Dashboard';
@@ -156,6 +157,7 @@ export const NAV_ITEMS = [
             { id: 'leave-management', label: 'Leave Management' },
             { id: 'payroll', label: 'Payroll Processing' },
             { id: 'reimbursements', label: 'Reimbursements' },
+            { id: 'recruitment', label: 'Recruitment' },
         ],
     },
     {
@@ -232,6 +234,7 @@ export const PAGE_COMPONENTS = {
     'leave-management': LeaveManagement,
     'apply-leave': ApplyLeave,
     payroll: Payroll,
+    recruitment: Recruitment,
     'statutory-compliance': StatutoryCompliance,
     reimbursements: Reimbursements,
     'employee-details': EmployeeDetails,
@@ -324,7 +327,7 @@ const DB_CODE_TO_MODULE_MAP = {
     "sty": "statutory-compliance",
     "lev": "leave-management",
     "trn": "hr-analytics",
-    "recut": "hr-analytics",
+    "recut": "recruitment",
     "cl": "employee-master",
     
     // Business Development
