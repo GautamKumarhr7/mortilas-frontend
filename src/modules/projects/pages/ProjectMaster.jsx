@@ -55,27 +55,27 @@ export default function ProjectMaster() {
         return (projectsList || []).filter(p => {
             if (!p) return false;
             const matchName = p.name ? String(p.name).toLowerCase() : '';
-            const matchCode = p.code ? String(p.code).toLowerCase() : '';
-            const matchClient = p.client ? String(p.client).toLowerCase() : '';
+            const matchCode = p.projectCode ? String(p.projectCode).toLowerCase() : '';
+            const matchClient = p.clientId ? String(p.clientId).toLowerCase() : '';
             const query = search ? String(search).toLowerCase() : '';
 
             const passesSearch = matchName.includes(query) || matchCode.includes(query) || matchClient.includes(query);
-            // Ignore status filter if 'All', otherwise match pending/approved etc
+            // Ignore status filter if 'All', otherwise match Draft/Active etc
             const passesStatus = statusFilter === 'All' || p.status === statusFilter;
             return passesSearch && passesStatus;
         });
     }, [projectsList, search, statusFilter]);
 
-    // 2. Statistics Calculation
     const stats = useMemo(() => {
-        const _values = projectsList.reduce((sum, p) => sum + (Number(p.value) || 0), 0);
-        const _progressSum = projectsList.reduce((s, p) => s + (Number(p.advancement) || 0), 0);
-        const avgProg = projectsList.length ? Math.round(_progressSum / projectsList.length) : 0;
+        const _values = projectsList.reduce((sum, p) => sum + (Number(p.contractValue) || 0), 0);
+        // advancement doesn't exist natively, we might need a derived metric
+        const _progressSum = 0; 
+        const avgProg = 0;
         const totalValueFormatted = (`₹${(_values / 100000).toFixed(2)}L`);
 
         return [
             { label: 'Total Projects', value: projectsList.length, icon: Building2, color: 'text-blue-600', bg: 'bg-blue-50' },
-            { label: 'Pending Projects', value: projectsList.filter(p => p.status === 'pending').length, icon: MapPin, color: 'text-yellow-600', bg: 'bg-yellow-50' },
+            { label: 'Active Projects', value: projectsList.filter(p => p.status === 'Active').length, icon: MapPin, color: 'text-emerald-600', bg: 'bg-emerald-50' },
             { label: 'Contract Value', value: totalValueFormatted, icon: DollarSign, color: 'text-amber-600', bg: 'bg-amber-50' },
             { label: 'Avg. Advancement', value: `${avgProg}%`, icon: TrendingUp, color: 'text-purple-600', bg: 'bg-purple-50' },
         ];
@@ -85,8 +85,13 @@ export default function ProjectMaster() {
     const handleOpenAdd = () => {
         setIsEditing(false);
         setFormData({ 
-            process: 'RUNNING', status: 'pending', category: 'Civil', 
-            advancement: 0, value: 0 
+            process: 'RUNNING', 
+            status: 'Draft', 
+            category: 'Civil', 
+            projectCodeYear: new Date().getFullYear().toString(),
+            projectCodeSequence: '',
+            contractValue: 0,
+            estimatedCost: 0
         });
         setIsModalOpen(true);
     };
@@ -108,7 +113,7 @@ export default function ProjectMaster() {
         confirmToast('Delete this project entry permanently?', async () => {
             try {
                 await projectAPI.deleteProject(id);
-                setProjectsList(prev => prev.filter(p => p.id !== id && p.code !== id));
+                setProjectsList(prev => prev.filter(p => p.id !== id));
                 toast.success("Project deleted successfully");
             } catch {
                 toast.error("Failed to delete project");
@@ -121,19 +126,41 @@ export default function ProjectMaster() {
         setIsSaving(true);
 
         try {
+            let finalProjectCode = undefined;
+            if (formData.projectCodeSequence && formData.projectCodeSequence.trim() !== '') {
+                const catShort = {
+                    'Civil': 'CIV',
+                    'Electrical': 'ELEC',
+                    'HVAC': 'HVAC',
+                    'Solar': 'SOLR',
+                    'Interior': 'INT',
+                    'Security': 'SEC',
+                    'Composite': 'COMP'
+                }[formData.category || 'Civil'] || 'CIV';
+                const year = formData.projectCodeYear || new Date().getFullYear();
+                finalProjectCode = `MECPL-${catShort}-${year}-${formData.projectCodeSequence.padStart(3, '0')}`;
+            }
+
             // Process payload exact keys required by project schema
             const processedData = {
-                code: formData.code,
+                projectCode: finalProjectCode || formData.projectCode || undefined,
                 name: formData.name,
-                client: formData.client,
+                clientId: parseInt(formData.clientId, 10),
                 category: formData.category,
-                value: Number(formData.value || 0),
+                siteAddress: formData.siteAddress,
+                latitude: formData.latitude ? Number(formData.latitude) : undefined,
+                longitude: formData.longitude ? Number(formData.longitude) : undefined,
+                contractValue: Number(formData.contractValue || 0),
+                estimatedCost: Number(formData.estimatedCost || 0),
+                advancePayment: formData.advancePayment ? Number(formData.advancePayment) : undefined,
+                retentionPercentage: formData.retentionPercentage ? Number(formData.retentionPercentage) : undefined,
+                paymentTerms: formData.paymentTerms || '',
+                plannedStart: formData.plannedStart || null,
+                plannedEnd: formData.plannedEnd || null,
+                revisedEnd: formData.revisedEnd || null,
                 process: formData.process || 'RUNNING',
-                status: formData.status || 'pending',
-                location: formData.location,
-                advancement: Number(formData.advancement || 0),
-                startDate: formData.startDate,
-                endDate: formData.endDate
+                status: formData.status || 'Draft',
+                notes: formData.notes || ''
             };
 
             if (isEditing && (formData.id || formData._id)) {
@@ -174,17 +201,17 @@ export default function ProjectMaster() {
         
         try {
             // CSV construction
-            const headers = ["Project Code", "Project Name", "Client", "Location", "Value (INR)", "Status", "Progress (%)", "Start Date", "End Date"];
+            const headers = ["Project Code", "Project Name", "Client ID", "Site Address", "Contract Value", "Estimated Cost", "Status", "Planned Start", "Planned End"];
             const rows = projectsList.map(p => [
-                `"${p.code || p.id || ''}"`,
+                `"${p.projectCode || p.id || ''}"`,
                 `"${p.name || ''}"`,
-                `"${p.client || ''}"`,
-                `"${p.location || ''}"`,
-                p.value || 0,
+                `"${p.clientId || ''}"`,
+                `"${p.siteAddress || ''}"`,
+                p.contractValue || 0,
+                p.estimatedCost || 0,
                 `"${p.status || ''}"`,
-                p.advancement || 0,
-                `"${p.startDate || ''}"`,
-                `"${p.endDate || ''}"`
+                `"${p.plannedStart || ''}"`,
+                `"${p.plannedEnd || ''}"`
             ]);
 
             const csvContent = "data:text/csv;charset=utf-8," 

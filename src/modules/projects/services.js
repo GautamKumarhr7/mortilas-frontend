@@ -135,38 +135,76 @@ export const siteAPI = {
 export const workOrderAPI = {
     /**
      * Fetch all work orders
-     * GET /works
+     * GET /work-orders
      */
     getAllWorkOrders: async () => {
-        const response = await axiosInstance.get('/works');
+        const response = await axiosInstance.get('/work-orders');
         return response.data;
     },
 
     /**
      * Create a new work order
-     * POST /works
+     * POST /work-orders
      * Body: { projectId, contractor, description, value, retention, startDate, target, type, status }
      */
     createWorkOrder: async (data) => {
-        const response = await axiosInstance.post('/works', data);
+        const response = await axiosInstance.post('/work-orders', data);
         return response.data;
     },
 
     /**
      * Update a work order
-     * PUT /works/:id
+     * PUT /work-orders/:id
      */
     updateWorkOrder: async (id, data) => {
-        const response = await axiosInstance.put(`/works/${id}`, data);
+        const response = await axiosInstance.put(`/work-orders/${id}`, data);
         return response.data;
     },
 
     /**
      * Delete a work order
-     * DELETE /works/:id
+     * DELETE /work-orders/:id
      */
     deleteWorkOrder: async (id) => {
-        const response = await axiosInstance.delete(`/works/${id}`);
+        const response = await axiosInstance.delete(`/work-orders/${id}`);
         return response.data;
     },
+};
+
+export const clientAPI = {
+    getAllClients: async () => {
+        const response = await axiosInstance.get('/clients');
+        return response.data;
+    },
+    createClient: async (data) => {
+        const response = await axiosInstance.post('/clients', data);
+        return response.data;
+    },
+    updateClient: async (id, data) => {
+        const response = await axiosInstance.put(`/clients/${id}`, data);
+        return response.data;
+    },
+    deleteClient: async (id) => {
+        const response = await axiosInstance.delete(`/clients/${id}`);
+        return response.data;
+    }
+};
+
+export const inventoryAPI = {
+    getAllInventories: async () => {
+        const response = await axiosInstance.get('/inventories');
+        return response.data;
+    },
+    createInventory: async (data) => {
+        const response = await axiosInstance.post('/inventories', data);
+        return response.data;
+    },
+    updateInventory: async (id, data) => {
+        const response = await axiosInstance.put(`/inventories/${id}`, data);
+        return response.data;
+    },
+    deleteInventory: async (id) => {
+        const response = await axiosInstance.delete(`/inventories/${id}`);
+        return response.data;
+    }
 };

@@ -3,38 +3,64 @@ import axiosInstance from '../../utils/axios';
 
 
 export const equipmentAPI = {
-    getAllEquipments: () => {
-        return axiosInstance.get('/equipments');
+    getAllEquipments: async () => {
+        const response = await axiosInstance.get('/equipments');
+        return response.data;
     },
-    getEquipmentById: (id) => {
-        return axiosInstance.get(`/equipments/${id}`);
+    getEquipmentById: async (id) => {
+        const response = await axiosInstance.get(`/equipments/${id}`);
+        return response.data;
     },
-    createEquipment: (data) => {
-        return axiosInstance.post('/equipments', data);
+    createEquipment: async (data) => {
+        const response = await axiosInstance.post('/equipments', data);
+        return response.data;
     },
-    updateEquipment: (id, data) => {
-        return axiosInstance.put(`/equipments/${id}`, data);
+    updateEquipment: async (id, data) => {
+        const response = await axiosInstance.put(`/equipments/${id}`, data);
+        return response.data;
     },
-    deleteEquipment: (id) => {
-        return axiosInstance.delete(`/equipments/${id}`);
+    deleteEquipment: async (id) => {
+        const response = await axiosInstance.delete(`/equipments/${id}`);
+        return response.data;
+    },
+    deployEquipment: async (id, data) => {
+        const response = await axiosInstance.post(`/equipments/${id}/deploy`, data);
+        return response.data;
+    },
+    returnEquipment: async (id, deploymentId, data) => {
+        const response = await axiosInstance.put(`/equipments/${id}/deploy/${deploymentId}/return`, data);
+        return response.data;
+    },
+    logMaintenance: async (id, data) => {
+        const response = await axiosInstance.post(`/equipments/${id}/maintenance`, data);
+        return response.data;
+    },
+    logFuelOrUtilization: async (id, data) => {
+        const response = await axiosInstance.post(`/equipments/${id}/logs`, data);
+        return response.data;
     }
 };
 
 export const inventoryAPI = {
-    getAllMaterials: () => {
-        return axiosInstance.get('/materials');
+    getAllMaterials: async () => {
+        const response = await axiosInstance.get('/inventories');
+        return response.data;
     },
-    getMaterialById: (id) => {
-        return axiosInstance.get(`/materials/${id}`);
+    getMaterialById: async (id) => {
+        const response = await axiosInstance.get(`/inventories/${id}`);
+        return response.data;
     },
-    createMaterial: (data) => {
-        return axiosInstance.post('/materials', data);
+    createMaterial: async (data) => {
+        const response = await axiosInstance.post('/inventories', data);
+        return response.data;
     },
-    updateMaterial: (id, data) => {
-        return axiosInstance.put(`/materials/${id}`, data);
+    updateMaterial: async (id, data) => {
+        const response = await axiosInstance.put(`/inventories/${id}`, data);
+        return response.data;
     },
-    deleteMaterial: (id) => {
-        return axiosInstance.delete(`/materials/${id}`);
+    deleteMaterial: async (id) => {
+        const response = await axiosInstance.delete(`/inventories/${id}`);
+        return response.data;
     }
 };
 
@@ -74,6 +100,51 @@ export const procurementAPI = {
     // Update procurement status/progress
     updateProcurementStatus: async (id, updateData) => {
         const response = await axiosInstance.patch(`/procurements/${id}`, updateData);
+        return response.data;
+    }
+};
+
+export const materialIndentAPI = {
+    getAllMaterialIndents: async () => {
+        const response = await axiosInstance.get('/material-indents');
+        return response.data;
+    },
+    createMaterialIndent: async (data) => {
+        const response = await axiosInstance.post('/material-indents', data);
+        return response.data;
+    }
+};
+
+export const purchaseOrderAPI = {
+    getAllPurchaseOrders: async () => {
+        const response = await axiosInstance.get('/purchase-orders');
+        return response.data;
+    },
+    createPurchaseOrder: async (data) => {
+        const response = await axiosInstance.post('/purchase-orders', data);
+        return response.data;
+    }
+};
+
+export const subcontractorAPI = {
+    getAllSubcontractors: async () => {
+        const response = await axiosInstance.get('/subcontractors');
+        return response.data;
+    },
+    getSubcontractorById: async (id) => {
+        const response = await axiosInstance.get(`/subcontractors/${id}`);
+        return response.data;
+    },
+    createSubcontractor: async (data) => {
+        const response = await axiosInstance.post('/subcontractors', data);
+        return response.data;
+    },
+    updateSubcontractor: async (id, data) => {
+        const response = await axiosInstance.put(`/subcontractors/${id}`, data);
+        return response.data;
+    },
+    deleteSubcontractor: async (id) => {
+        const response = await axiosInstance.delete(`/subcontractors/${id}`);
         return response.data;
     }
 };

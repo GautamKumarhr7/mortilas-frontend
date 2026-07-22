@@ -3,7 +3,8 @@ import { Plus, ClipboardList, AlertCircle, TrendingUp, CheckCircle2, RefreshCw }
 import { useApp } from '../../../hooks/useApp';
 import toast from 'react-hot-toast';
 import { confirmToast } from '../../../utils/toastUtils';
-import { workOrderAPI } from '../services';
+import { workOrderAPI, projectAPI } from '../services';
+import { subcontractorAPI } from '../../operations/services';
 
 // Sub-components
 import WorkOrderStats from '../components/workorders/WorkOrderStats';
@@ -13,7 +14,7 @@ import WorkOrderModal from '../components/workorders/WorkOrderModal';
 import WorkOrderDetailSidebar from '../components/workorders/WorkOrderDetailSidebar';
 
 export default function WorkOrders() {
-    const { projects } = useApp();
+    const { projects: contextProjects } = useApp();
 
     // Local state — data comes from API, not AppContext
     const [workOrders, setWorkOrders] = useState([]);
@@ -23,17 +24,23 @@ export default function WorkOrders() {
     // UI States
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState('All');
+    const [subcontractors, setSubcontractors] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [selectedWO, setSelectedWO] = useState(null);
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState({});
+    const [projectList, setProjectList] = useState([]);
 
     // ─── Fetch all work orders ────────────────────────────────────────────────
     const fetchWorkOrders = useCallback(async () => {
         setIsLoading(true);
         try {
-            const data = await workOrderAPI.getAllWorkOrders();
+            const [data, subRes] = await Promise.all([
+                workOrderAPI.getAllWorkOrders(),
+                subcontractorAPI.getAllSubcontractors().catch(() => [])
+            ]);
+            
             const list = Array.isArray(data)
                 ? data
                 : Array.isArray(data?.data)
@@ -41,6 +48,8 @@ export default function WorkOrders() {
                 : Array.isArray(data?.works)
                 ? data.works
                 : [];
+            
+            setSubcontractors(subRes?.data || subRes || []);
             // Newest first
             setWorkOrders([...list].reverse());
         } catch (error) {
@@ -51,36 +60,37 @@ export default function WorkOrders() {
         }
     }, []);
 
+    const fetchProjects = async () => {
+        try {
+            const res = await projectAPI.getAllProjects();
+            // res is axios response, res.data is { success: true, data: [...] }
+            const list = res?.data?.data || res?.data || [];
+            setProjectList(Array.isArray(list) ? list : []);
+        } catch (error) {
+            console.error('Fetch projects error:', error);
+        }
+    };
+
     useEffect(() => {
         fetchWorkOrders();
+        fetchProjects();
     }, [fetchWorkOrders]);
 
     // ─── Derived / memoised ───────────────────────────────────────────────────
     const filteredWOs = useMemo(() => {
         return workOrders.filter(wo => {
-            const id = String(wo.id || wo._id || '').toLowerCase();
-            const contractor = (wo.contractor || wo.vendorName || '').toLowerCase();
-            const description = (wo.description || wo.workDescription || '').toLowerCase();
-            const projectId = String(wo.projectId || '').toLowerCase();
-            const status = (wo.status || '').toLowerCase();
-
-            const matchesSearch =
-                id.includes(search.toLowerCase()) ||
-                contractor.includes(search.toLowerCase()) ||
-                description.includes(search.toLowerCase()) ||
-                projectId.includes(search.toLowerCase());
-
-            const matchesStatus =
-                filter === 'All' || status === filter.toLowerCase();
-
-            return matchesSearch && matchesStatus;
+            const matchesSearch = 
+                (wo.workOrderNo || '').toLowerCase().includes(search.toLowerCase()) ||
+                (wo.title || '').toLowerCase().includes(search.toLowerCase());
+            const matchesFilter = filter === 'All' || (wo.status || '').toLowerCase() === filter.toLowerCase();
+            return matchesSearch && matchesFilter;
         });
     }, [workOrders, search, filter]);
 
     const stats = useMemo(() => {
-        const totalVal = workOrders.reduce((sum, wo) => sum + Number(wo.value || 0), 0);
-        const activeCount = workOrders.filter(wo => (wo.status || '').toLowerCase() === 'active').length;
-        const pendingCount = workOrders.filter(wo => (wo.status || '').toLowerCase() === 'pending approval').length;
+        const totalVal = workOrders.reduce((sum, wo) => sum + Number(wo.estimatedCost || 0), 0);
+        const activeCount = workOrders.filter(wo => (wo.status || '').toLowerCase() === 'approved').length;
+        const pendingCount = workOrders.filter(wo => (wo.status || '').toLowerCase() === 'pending').length;
         const avgProgress = workOrders.length
             ? Math.round(workOrders.reduce((s, wo) => s + Number(wo.progress || 0), 0) / workOrders.length)
             : 0;
@@ -95,7 +105,7 @@ export default function WorkOrders() {
     // ─── Handlers ─────────────────────────────────────────────────────────────
     const handleOpenAdd = () => {
         setIsEditing(false);
-        setFormData({ status: 'active', type: 'Rate Contract', retention: 5 });
+        setFormData({ status: 'pending', type: 'Rate Contract', retention: 5 });
         setIsModalOpen(true);
     };
 
@@ -126,21 +136,27 @@ export default function WorkOrders() {
         });
     };
 
-    const handleSave = async (e) => {
-        e.preventDefault();
+    const handleSave = async (e, childData = null) => {
+        e?.preventDefault();
         setIsSaving(true);
         try {
+            const dataToSave = { ...formData, ...(childData || {}) };
+            
             // Build the exact payload the API expects
             const payload = {
-                projectId: Number(formData.projectId),
-                contractor: formData.contractor || formData.vendorName || '',
-                description: formData.description || formData.workDescription || '',
-                value: Number(formData.value),
-                retention: Number(formData.retention) || 0,
-                startDate: formData.startDate || '',
-                target: formData.target || formData.endDate || '',
-                type: formData.type || 'Rate Contract',
-                status: (formData.status || 'active').toLowerCase(),
+                projectId: Number(dataToSave.projectId),
+                workOrderNo: dataToSave.workOrderNo || undefined,
+                title: dataToSave.title || '',
+                subcontractorId: dataToSave.subcontractorId || null,
+                description: dataToSave.description || '',
+                estimatedCost: Number(dataToSave.estimatedCost || 0),
+                startDate: dataToSave.startDate || null,
+                endDate: dataToSave.endDate || null,
+                progress: Number(dataToSave.progress || 0),
+                status: (dataToSave.status || 'pending').toLowerCase(),
+                boqItems: dataToSave.boqItems || [],
+                billingMilestones: dataToSave.billingMilestones || [],
+                approvals: dataToSave.approvals || { siteEngineer: false, projectManager: false, departmentHead: false },
             };
 
             if (isEditing) {
@@ -165,7 +181,16 @@ export default function WorkOrders() {
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+        setFormData(prev => {
+            const next = { ...prev, [name]: value };
+            if (name === 'projectId' && !isEditing) {
+                const proj = projectList.find(p => String(p.id) === String(value));
+                if (proj && proj.projectCode) {
+                    next.workOrderNo = 'WO-' + proj.projectCode;
+                }
+            }
+            return next;
+        });
     };
 
     // ─── Render ───────────────────────────────────────────────────────────────
@@ -234,6 +259,7 @@ export default function WorkOrders() {
             ) : (
                 <WorkOrderTable
                     workOrders={filteredWOs}
+                    subcontractors={subcontractors}
                     onEdit={handleOpenEdit}
                     onDelete={handleDelete}
                     onViewDetails={handleViewDetails}
@@ -244,7 +270,7 @@ export default function WorkOrders() {
                 isOpen={isModalOpen}
                 isEditing={isEditing}
                 formData={formData}
-                projects={projects}
+                projects={projectList}
                 isSaving={isSaving}
                 onClose={() => setIsModalOpen(false)}
                 onSave={handleSave}

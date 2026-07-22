@@ -39,28 +39,28 @@ export default function ProjectTable({ projects, onEdit, onDelete, onViewDetails
                     </thead>
                     <tbody>
                         {projects.length > 0 ? projects.map((p) => (
-                            <tr key={p.id || p._id || p.code} onClick={() => onViewDetails(p)} className="table-row hover:bg-slate-50 transition-colors cursor-pointer">
+                            <tr key={p.id || p._id || p.projectCode} onClick={() => onViewDetails(p)} className="table-row hover:bg-slate-50 transition-colors cursor-pointer">
                                 <td className="table-cell">
                                     <span className="font-mono text-xs font-semibold text-blue-600 px-2 py-1 bg-blue-50 rounded-lg whitespace-nowrap">
-                                        {p.code}
+                                        {p.projectCode}
                                     </span>
                                 </td>
                                 <td className="table-cell max-w-[260px]">
                                     <p className="text-slate-900 font-semibold text-sm line-clamp-1">{p.name || 'Unnamed Project'}</p>
                                     <div className="flex items-center gap-2 mt-1">
                                         <span className={`badge ${categoryColors[p.category] || 'badge-gray'}`}>{p.category}</span>
-                                        <span className="text-slate-400 text-xs flex items-center gap-1">
-                                            <MapPin className="w-3 h-3" /> {p.location || 'Unknown Location'}
+                                        <span className="text-slate-400 text-xs flex items-center gap-1 line-clamp-1">
+                                            <MapPin className="w-3 h-3" /> {p.siteAddress || 'Unknown Location'}
                                         </span>
                                     </div>
                                 </td>
                                 <td className="table-cell">
-                                    <p className="text-slate-800 font-medium text-sm">{p.client}</p>
+                                    <p className="text-slate-800 font-medium text-sm">Client ID: {p.clientId}</p>
                                     <p className="text-slate-400 text-xs">Public / Private</p>
                                 </td>
                                 <td className="table-cell">
-                                    <p className="text-emerald-600 font-semibold">₹{Number(p.value || 0).toLocaleString()}</p>
-                                    <p className="text-slate-400 text-xs">Value Allocated</p>
+                                    <p className="text-emerald-600 font-semibold">₹{Number(p.contractValue || 0).toLocaleString()}</p>
+                                    <p className="text-slate-400 text-xs">Contract Value</p>
                                 </td>
                                 <td className="table-cell w-44">
                                     <div className="space-y-1.5">
@@ -87,7 +87,7 @@ export default function ProjectTable({ projects, onEdit, onDelete, onViewDetails
                                         <button onClick={(e) => onEdit(e, p)} className="p-1.5 text-slate-400 hover:text-[#2f6645] hover:bg-emerald-50 rounded-lg transition-all">
                                             <Edit2 className="w-3.5 h-3.5" />
                                         </button>
-                                        <button onClick={(e) => onDelete(e, p.id || p.code)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
+                                        <button onClick={(e) => onDelete(e, p.id || p.projectCode)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
                                             <Trash2 className="w-3.5 h-3.5" />
                                         </button>
                                         <button className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all">

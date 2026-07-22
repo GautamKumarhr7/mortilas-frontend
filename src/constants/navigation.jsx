@@ -44,7 +44,7 @@ import Recruitment from '../modules/hr/pages/Recruitment';
 import Reimbursements from '../modules/hr/pages/Reimbursements';
 import StatutoryCompliance from '../modules/hr/pages/StatutoryCompliance';
 import Dashboard from '../modules/dashboard/pages/Dashboard';
-import EquipmentAssets from '../modules/operations/pages/EquipmentAssets';
+import EquipmentAssets from '../modules/operations/pages/Equipments';
 import InventoryStore from '../modules/operations/pages/InventoryStore';
 import MaterialReconciliation from '../modules/operations/pages/MaterialReconciliation';
 import Procurement from '../modules/operations/pages/Procurement';
@@ -55,12 +55,16 @@ import ProgressTracking from '../modules/projects/pages/ProgressTracking';
 import ProjectMaster from '../modules/projects/pages/ProjectMaster';
 import SiteManagement from '../modules/projects/pages/SiteManagement';
 import WorkOrders from '../modules/projects/pages/WorkOrders';
+import ClientMaster from '../modules/projects/pages/ClientMaster';
+import InventoryMaster from '../modules/projects/pages/InventoryMaster';
 import Roles from '../modules/authority/pages/Roles';
 import RolePermissions from '../modules/authority/pages/RolePermissions';
 
 export const MODULE_TITLES = {
     dashboard: 'Dashboard',
     'project-master': 'Project Master',
+    'client-master': 'Client Master',
+    'inventory-master': 'Inventory Master',
     'work-orders': 'Work Orders',
     boq: 'Bill of Quantities',
     'site-management': 'Site Management',
@@ -113,6 +117,8 @@ export const NAV_ITEMS = [
         icon: FolderKanban,
         children: [
             { id: 'project-master', label: 'Project Master' },
+            { id: 'client-master', label: 'Client Master' },
+            { id: 'inventory-master', label: 'Inventory Master' },
             { id: 'work-orders', label: 'Work Orders' },
             { id: 'boq', label: 'Bill of Quantities' },
             { id: 'site-management', label: 'Site Management' },
@@ -208,6 +214,8 @@ export const NAV_ITEMS = [
 export const PAGE_COMPONENTS = {
     dashboard: Dashboard,
     'project-master': ProjectMaster,
+    'client-master': ClientMaster,
+    'inventory-master': InventoryMaster,
     'work-orders': WorkOrders,
     boq: BOQ,
     'site-management': SiteManagement,

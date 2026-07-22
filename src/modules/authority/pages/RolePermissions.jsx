@@ -28,25 +28,48 @@ export default function RolePermissions() {
         const initData = async () => {
             try {
                 setIsLoading(true);
-                const [rolesData, modulesData, permissionsData] = await Promise.all([
+                const [rolesData, modulesData, permissionsData, allSubmodulesData] = await Promise.all([
                     authorityAPI.getRoles(),
                     authorityAPI.getModules(),
-                    authorityAPI.getPermissions()
+                    authorityAPI.getPermissions(),
+                    authorityAPI.getAllSubmodules()
                 ]);
                 let filteredModules = modulesData ? JSON.parse(JSON.stringify(modulesData)) : [];
+                const submodulesArray = allSubmodulesData || [];
+                
+                const groupedSubmodules = {};
+                submodulesArray.forEach(sub => {
+                    const modId = sub.moduleId || sub.module_id;
+                    if (!groupedSubmodules[modId]) {
+                        groupedSubmodules[modId] = [];
+                    }
+                    groupedSubmodules[modId].push(sub);
+                });
+                
+                const initialExpanded = {};
+                filteredModules.forEach(m => {
+                    const modId = m.id || m._id;
+                    initialExpanded[modId] = true;
+                });
                 // Filter Authority module to only include Role and Role Permission submodules
                 const authModuleIdx = filteredModules.findIndex(m => m.name?.toLowerCase() === 'authority' || m.code?.toLowerCase() === 'authority');
-                if (authModuleIdx >= 0 && filteredModules[authModuleIdx].submodules) {
-                    filteredModules[authModuleIdx].submodules = filteredModules[authModuleIdx].submodules.filter(sub => {
-                        const subName = sub.name?.toLowerCase() || '';
-                        const subCode = sub.code?.toLowerCase() || '';
-                        return subName.includes('role') || subCode.includes('role');
-                    });
+                if (authModuleIdx >= 0) {
+                    const authModId = filteredModules[authModuleIdx].id || filteredModules[authModuleIdx]._id;
+                    if (groupedSubmodules[authModId]) {
+                        groupedSubmodules[authModId] = groupedSubmodules[authModId].filter(sub => {
+                            const subName = sub.name?.toLowerCase() || '';
+                            const subCode = sub.code?.toLowerCase() || '';
+                            return subName.includes('role') || subCode.includes('role');
+                        });
+                        filteredModules[authModuleIdx].submodules = groupedSubmodules[authModId];
+                    }
                 }
 
                 setRoles(rolesData || []);
                 setModules(filteredModules);
                 setPermissions(permissionsData || []);
+                setModuleSubmodules(groupedSubmodules);
+                setExpandedModules(initialExpanded);
             } catch (error) {
                 console.error('Error fetching initial data:', error);
                 toast.error('Failed to load required data');
@@ -104,35 +127,8 @@ export default function RolePermissions() {
         }
     };
 
-    const toggleModule = async (moduleId) => {
-        const isExpanded = expandedModules[moduleId];
-        setExpandedModules(prev => ({ ...prev, [moduleId]: !isExpanded }));
-
-        // Fetch submodules if not already loaded
-        if (!isExpanded && !moduleSubmodules[moduleId]) {
-            try {
-                setLoadingSubmodules(prev => ({ ...prev, [moduleId]: true }));
-                let data = await authorityAPI.getSubmodulesByModuleId(moduleId);
-                data = data || [];
-                
-                // Filter out unwanted submodules if this is the Authority module
-                const moduleObj = modules.find(m => (m.id || m._id) === moduleId);
-                if (moduleObj && (moduleObj.name?.toLowerCase() === 'authority' || moduleObj.code?.toLowerCase() === 'authority')) {
-                    data = data.filter(sub => {
-                        const subName = sub.name?.toLowerCase() || '';
-                        const subCode = sub.code?.toLowerCase() || '';
-                        return subName.includes('role') || subCode.includes('role');
-                    });
-                }
-                
-                setModuleSubmodules(prev => ({ ...prev, [moduleId]: data }));
-            } catch (error) {
-                console.error('Error fetching submodules:', error);
-                toast.error('Failed to fetch submodules');
-            } finally {
-                setLoadingSubmodules(prev => ({ ...prev, [moduleId]: false }));
-            }
-        }
+    const toggleModule = (moduleId) => {
+        setExpandedModules(prev => ({ ...prev, [moduleId]: !prev[moduleId] }));
     };
 
     const togglePermission = (subModuleId, permissionId) => {
@@ -186,7 +182,7 @@ export default function RolePermissions() {
 
         try {
             setIsSaving(true);
-            await authorityAPI.saveRolePermissions(payload);
+            await authorityAPI.saveRolePermissions(selectedRole, payload);
             toast.success('Role permissions saved successfully!');
         } catch (error) {
             console.error('Error saving role permissions:', error);

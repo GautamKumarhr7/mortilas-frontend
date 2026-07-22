@@ -26,7 +26,7 @@ export const authAPI = {
    * @param {string} token - The refresh token
    */
   refreshToken: async (token) => {
-    const response = await axiosInstance.post('/auth/refresh-token', {
+    const response = await axiosInstance.post('/auth/refresh', {
       refreshToken: token,
     });
     return response.data;

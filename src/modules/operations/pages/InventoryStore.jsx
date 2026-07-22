@@ -24,6 +24,7 @@ export default function InventoryStore() {
   
   const [formData, setFormData] = useState({
     materialName: '', 
+    hsn: '',
     category: 'Construction', 
     warehouseLocation: 'Main Store', 
     quantity: '', 
@@ -57,12 +58,13 @@ export default function InventoryStore() {
   const handleOpenEdit = (item) => {
     setCurrentId(item.id);
     setFormData({
-        materialName: item.materialName || item.name || '',
+        materialName: item.materialName || item.itemName || item.name || '',
+        hsn: item.hsn || '',
         category: item.category || 'Construction',
         warehouseLocation: item.warehouseLocation || item.warehouse || 'Main Store',
         quantity: item.quantity || '',
         quantityType: item.quantityType || item.unit || 'Nos',
-        avgPurchaseRate: item.avgPurchaseRate || item.rate || ''
+        avgPurchaseRate: item.avgPurchaseRate || item.price || item.rate || ''
     });
     setIsEditing(true);
     setIsModalOpen(true);
@@ -91,9 +93,13 @@ export default function InventoryStore() {
     e.preventDefault();
     setIsSaving(true);
     const payload = {
-        ...formData,
-        quantity: Number(formData.quantity),
-        avgPurchaseRate: Number(formData.avgPurchaseRate)
+        itemName: formData.materialName,
+        category: formData.category || 'Construction',
+        warehouseLocation: formData.warehouseLocation || 'Main Store',
+        hsn: formData.hsn || '0000',
+        quantity: Number(formData.quantity) || 0,
+        unit: formData.quantityType || 'Nos',
+        price: Number(formData.avgPurchaseRate) || 0,
     };
     try {
         if (isEditing) {
@@ -106,7 +112,7 @@ export default function InventoryStore() {
         fetchMaterials();
         setIsModalOpen(false);
         setIsEditing(false);
-        setFormData({ materialName: '', category: 'Construction', warehouseLocation: 'Main Store', quantity: '', quantityType: 'Nos', avgPurchaseRate: '' });
+        setFormData({ materialName: '', hsn: '', category: 'Construction', warehouseLocation: 'Main Store', quantity: '', quantityType: 'Nos', avgPurchaseRate: '' });
     } catch (error) {
         console.error("Save error:", error);
         toast.error('Failed to save material details');
@@ -214,10 +220,10 @@ export default function InventoryStore() {
                 <tr key={item.id} className="table-row hover:bg-slate-50 transition-colors">
                   <td className="table-cell">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-emerald-100 group-hover:text-emerald-500 transition-colors uppercase text-[10px] font-black">{(item.materialName || item.name || '?')[0]}</div>
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 group-hover:bg-emerald-100 group-hover:text-emerald-500 transition-colors uppercase text-[10px] font-black">{(item.materialName || item.itemName || item.name || '?')[0]}</div>
                       <div>
-                        <p className="text-slate-900 font-bold">{item.materialName || item.name}</p>
-                        <p className="text-[9px] font-mono text-blue-500 uppercase mt-0.5 tracking-wider">SKU-{ (item.materialName || item.name || '').replace(/\s+/g, '').slice(0, 6).toUpperCase()}</p>
+                        <p className="text-slate-900 font-bold">{item.materialName || item.itemName || item.name}</p>
+                        <p className="text-[9px] font-mono text-blue-500 uppercase mt-0.5 tracking-wider">SKU-{ (item.materialName || item.itemName || item.name || '').replace(/\s+/g, '').slice(0, 6).toUpperCase()}</p>
                       </div>
                     </div>
                   </td>
@@ -231,7 +237,7 @@ export default function InventoryStore() {
                     </div>
                   </td>
                   <td className="table-cell text-right">
-                    <p className="font-bold text-emerald-600 tracking-tighter">₹{(item.avgPurchaseRate || item.rate || 0).toLocaleString()}</p>
+                    <p className="font-bold text-emerald-600 tracking-tighter">₹{(item.avgPurchaseRate || item.price || item.rate || 0).toLocaleString()}</p>
                   </td>
                   <td className="table-cell">
                     <div className="flex items-center gap-1.5 text-slate-500">
@@ -290,9 +296,14 @@ export default function InventoryStore() {
               <div>
                 <h3 className="text-[10px] font-black tracking-[0.2em] text-emerald-600 mb-6 uppercase">Inventory Identification</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2 md:col-span-2">
+                  <div className="space-y-2 md:col-span-1">
                     <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">Material Name <span className="text-red-500">*</span></label>
                     <input name="materialName" required className="input w-full h-12 font-bold" placeholder="e.g. Copper Wire 1.5mm" value={formData.materialName} onChange={handleInputChange} />
+                  </div>
+                  
+                  <div className="space-y-2 md:col-span-1">
+                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest ml-1">HSN Code <span className="text-red-500">*</span></label>
+                    <input name="hsn" required className="input w-full h-12 font-bold" placeholder="e.g. 7408" value={formData.hsn} onChange={handleInputChange} />
                   </div>
                   
                   <div className="space-y-2 leading-none">

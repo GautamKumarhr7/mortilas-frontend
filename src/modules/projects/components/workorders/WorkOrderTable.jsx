@@ -11,13 +11,13 @@ const statusBadge = {
     'Completed': 'badge-blue',
 };
 
-export default function WorkOrderTable({ workOrders, onEdit, onDelete, onViewDetails }) {
+export default function WorkOrderTable({ workOrders, subcontractors = [], onEdit, onDelete, onViewDetails }) {
     return (
         <div className="card overflow-hidden">
-            <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                    <thead className="bg-slate-50 border-b border-slate-200">
-                        <tr>
+            <div className="overflow-x-auto min-h-[400px]">
+                <table className="w-full text-left border-collapse">
+                    <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100">
                             <th className="table-header">WO ID</th>
                             <th className="table-header">Order Description</th>
                             <th className="table-header">Subcontractor</th>
@@ -29,11 +29,17 @@ export default function WorkOrderTable({ workOrders, onEdit, onDelete, onViewDet
                     </thead>
                     <tbody>
                         {workOrders.length > 0 ? workOrders.map((wo, idx) => {
-                            const woId = wo.id || wo._id || idx;
-                            const contractor = wo.contractor || wo.vendorName || '—';
-                            const description = wo.description || wo.workDescription || '—';
-                            const projectId = String(wo.projectId || wo.projectName || '—');
-                            const status = wo.status || 'draft';
+                            const woId = wo.workOrderNo || wo.id || idx;
+                            
+                            // Find the subcontractor from the passed array if wo.subcontractorName is missing
+                            const sub = subcontractors.find(s => s.id === wo.subcontractorId);
+                            const subcontractorName = wo.subcontractorName || sub?.companyName;
+                            
+                            const contractor = subcontractorName || (wo.subcontractorId ? `Subcontractor #${wo.subcontractorId.toString().substring(0, 6)}...` : '—');
+                            
+                            const description = wo.title || wo.description || '—';
+                            const projectId = wo.projectCode || `Proj #${wo.projectId || '—'}`;
+                            const status = (wo.status || 'pending').toLowerCase();
                             return (
                             <tr key={woId} onClick={() => onViewDetails(wo)} className="table-row hover:bg-slate-50 transition-colors cursor-pointer">
                                 <td className="table-cell">
@@ -42,9 +48,9 @@ export default function WorkOrderTable({ workOrders, onEdit, onDelete, onViewDet
                                 <td className="table-cell max-w-[260px]">
                                     <p className="text-slate-900 font-semibold text-sm line-clamp-1">{description}</p>
                                     <div className="flex items-center gap-1.5 mt-1">
-                                        <span className="text-slate-400 text-xs">#{projectId}</span>
+                                        <span className="text-slate-400 text-xs">{projectId}</span>
                                         <span className="text-slate-300">•</span>
-                                        <span className="text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{wo.type || '—'}</span>
+                                        <span className="text-xs text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">Work Order</span>
                                     </div>
                                 </td>
                                 <td className="table-cell">
@@ -56,8 +62,8 @@ export default function WorkOrderTable({ workOrders, onEdit, onDelete, onViewDet
                                     </div>
                                 </td>
                                 <td className="table-cell">
-                                    <p className="text-emerald-600 font-semibold">₹{(Number(wo.value || 0) / 100000).toFixed(1)}L</p>
-                                    <p className="text-slate-400 text-xs">Contract Value</p>
+                                    <p className="text-emerald-600 font-semibold">₹{(Number(wo.estimatedCost || 0)).toLocaleString()}</p>
+                                    <p className="text-slate-400 text-xs">Estimated Cost</p>
                                 </td>
                                 <td className="table-cell w-40">
                                     <div className="space-y-1.5">

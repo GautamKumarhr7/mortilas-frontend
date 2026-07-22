@@ -134,5 +134,26 @@ export const vendorAPI = {
             console.error('Error deleting vendor:', error);
             throw error;
         }
+    },
+
+    // Rate Contracts
+    getVendorRateContracts: async (vendorId) => {
+        try {
+            const response = await axiosInstance.get(`/vendors/${vendorId}/rate-contracts`);
+            return response.data;
+        } catch (error) {
+            console.error('Error fetching rate contracts:', error);
+            throw error;
+        }
+    },
+
+    createVendorRateContract: async (vendorId, contractData) => {
+        try {
+            const response = await axiosInstance.post(`/vendors/${vendorId}/rate-contracts`, contractData);
+            return response.data;
+        } catch (error) {
+            console.error('Error creating rate contract:', error);
+            throw error;
+        }
     }
 };

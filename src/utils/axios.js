@@ -48,7 +48,7 @@ axiosInstance.interceptors.response.use(
         
         // Call refresh token API without an interceptor
         // Removing Authorization header as it's expired and some servers reject refresh calls with it
-        const result = await axios.post(`${BASE_URL}/auth/refresh-token`, {
+        const result = await axios.post(`${BASE_URL}/auth/refresh`, {
           refreshToken: refreshToken,
           token: refreshToken 
         }, {
