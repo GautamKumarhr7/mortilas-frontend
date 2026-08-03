@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Loader2, Save, UserCheck, Edit3 } from 'lucide-react';
+import { X, Loader2, Save, UserCheck, Edit3, Eye, EyeOff } from 'lucide-react';
 import { Country, State, City } from 'country-state-city';
 import { vendorAPI } from '../../services';
 
@@ -30,6 +30,7 @@ export default function VendorFormModal({ isOpen, isEditing, initialData, onClos
     isPreferred: false,
     rating: 0,
     creditLimit: 0,
+    password: '',
   });
 
   useEffect(() => {
@@ -66,6 +67,7 @@ export default function VendorFormModal({ isOpen, isEditing, initialData, onClos
         isPreferred: false,
         rating: 0,
         creditLimit: 0,
+        password: '',
       });
     }
   }, [isOpen, isEditing, initialData]);
@@ -73,6 +75,7 @@ export default function VendorFormModal({ isOpen, isEditing, initialData, onClos
   const countries = useMemo(() => Country.getAllCountries(), []);
   const [states, setStates] = useState([]);
   const [cities, setCities] = useState([]);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     const country = countries.find(c => c.name === formData.country);

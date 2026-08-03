@@ -7,6 +7,8 @@ import {
 import toast from 'react-hot-toast';
 import Skeleton from '../../../components/common/Skeleton';
 import { vendorAPI } from '../services';
+import { purchaseOrderAPI, poBidAPI, materialIndentAPI } from '../../operations/services';
+import { workOrderAPI } from '../../projects/services';
 
 import VendorFormModal from '../components/vendors/VendorFormModal';
 import VendorDetailSidebar from '../components/vendors/VendorDetailSidebar';
@@ -27,6 +29,23 @@ export default function VendorManagement() {
   const [isEditing, setIsEditing] = useState(false);
   const [currentVendor, setCurrentVendor] = useState(null);
 
+  // Indent Requests state
+  const [activeTab, setActiveTab] = useState('directory'); // 'directory' or 'indent-requests'
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [indents, setIndents] = useState([]);
+  const [workOrders, setWorkOrders] = useState([]);
+  const [isBidModalOpen, setIsBidModalOpen] = useState(false);
+  const [selectedIndentForBid, setSelectedIndentForBid] = useState(null);
+  const [bidAmount, setBidAmount] = useState('');
+  const [bidVendorId, setBidVendorId] = useState('');
+
+  // Delivery Tracking state
+  const [isDeliveryModalOpen, setIsDeliveryModalOpen] = useState(false);
+  const [selectedPOForDelivery, setSelectedPOForDelivery] = useState(null);
+  const [deliveryStatus, setDeliveryStatus] = useState('');
+  const [dispatchDate, setDispatchDate] = useState('');
+  const [arrivalTime, setArrivalTime] = useState('');
+
   const fetchVendors = async () => {
     setIsLoading(true);
     try {
@@ -40,8 +59,34 @@ export default function VendorManagement() {
     }
   };
 
+  const fetchPurchaseOrders = async () => {
+    try {
+      const res = await purchaseOrderAPI.getAllPurchaseOrders();
+      setPurchaseOrders(res?.data || []);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const fetchIndents = async () => {
+    try {
+      const [iRes, woRes] = await Promise.all([
+        materialIndentAPI.getAllMaterialIndents(),
+        workOrderAPI.getAllWorkOrders().catch(() => [])
+      ]);
+      const list = Array.isArray(iRes) ? iRes : (iRes?.data?.materialIndents || iRes?.data || []);
+      const woList = Array.isArray(woRes) ? woRes : (woRes?.data || []);
+      setIndents(list);
+      setWorkOrders(woList);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   useEffect(() => {
     fetchVendors();
+    fetchPurchaseOrders();
+    fetchIndents();
   }, []);
 
   // Notice: The backend now returns { vendor: {}, category: {} } due to the left join
@@ -97,6 +142,38 @@ export default function VendorManagement() {
     }
   };
 
+  const handleCreateBid = async () => {
+    if (!bidVendorId || !bidAmount) return toast.error('Vendor and amount required');
+    try {
+      await poBidAPI.createBid({ indentId: selectedIndentForBid.id, vendorId: bidVendorId, amount: bidAmount });
+      toast.success('Bid submitted successfully!');
+      setIsBidModalOpen(false);
+      setSelectedIndentForBid(null);
+      setBidAmount('');
+      setBidVendorId('');
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'Failed to submit bid');
+    }
+  };
+
+  const handleUpdateDelivery = async () => {
+    try {
+      await purchaseOrderAPI.updateDeliveryStatus(selectedPOForDelivery.id, {
+        deliveryStatus,
+        dispatchDate: dispatchDate || undefined,
+        arrivalTime: arrivalTime || undefined
+      });
+      toast.success('Delivery status updated successfully');
+      setIsDeliveryModalOpen(false);
+      setSelectedPOForDelivery(null);
+      fetchPurchaseOrders();
+    } catch (error) {
+      toast.error('Failed to update delivery status');
+    }
+  };
+
+  const approvedIndents = indents.filter(i => (i.status || '').toLowerCase() === 'approved');
+
   return (
     <div className="space-y-6 animate-fade-in dashboard-container">
       {/* Page Header */}
@@ -113,7 +190,24 @@ export default function VendorManagement() {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      <div className="flex border-b border-slate-200 gap-8">
+        <button 
+          onClick={() => setActiveTab('directory')}
+          className={`py-3 text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'directory' ? 'border-emerald-600 text-emerald-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+        >
+          Vendor Directory
+        </button>
+        <button 
+          onClick={() => setActiveTab('indent-requests')}
+          className={`py-3 text-xs font-black uppercase tracking-widest border-b-2 transition-all ${activeTab === 'indent-requests' ? 'border-emerald-600 text-emerald-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+        >
+          Indent Requests {approvedIndents.length > 0 && <span className="ml-1 bg-emerald-600 text-white text-[9px] px-1.5 py-0.5 rounded-full">{approvedIndents.length}</span>}
+        </button>
+      </div>
+
+      {activeTab === 'directory' ? (
+        <>
+          {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((s, i) => (
           <div key={i} className="card p-5 border-b-4 border-b-transparent hover:border-b-emerald-600 transition-all cursor-default">
@@ -230,6 +324,104 @@ export default function VendorManagement() {
           </table>
         </div>
       </div>
+      </>
+      ) : activeTab === 'indent-requests' ? (
+        <div className="card overflow-hidden">
+          <div className="p-4 border-b border-slate-200 bg-slate-50/50">
+            <h2 className="text-sm font-black uppercase tracking-widest text-slate-700">Approved Material Indents</h2>
+            <p className="text-[10px] text-slate-400 mt-1 font-medium">Raise bids for approved material indents below.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs box-border">
+              <thead className="bg-[#fcfdfe] border-b border-slate-200">
+                <tr>
+                  <th className="table-header py-5">Indent No</th>
+                  <th className="table-header">Work Order</th>
+                  <th className="table-header">Date</th>
+                  <th className="table-header text-center whitespace-nowrap">Status</th>
+                  <th className="table-header text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {approvedIndents.length === 0 ? (
+                  <tr><td colSpan={5} className="p-8 text-center text-slate-500">No approved indents available for bidding.</td></tr>
+                ) : approvedIndents.map(indent => {
+                  const wo = workOrders.find(w => String(w.id) === String(indent.workOrderId));
+                  return (
+                    <tr key={indent.id} className="table-row hover:bg-slate-50">
+                      <td className="table-cell font-bold text-slate-800">{indent.indentNo || `IND-${indent.id}`}</td>
+                      <td className="table-cell text-slate-600">{wo ? `${wo.workOrderNo} — ${wo.title}` : `WO #${indent.workOrderId}`}</td>
+                      <td className="table-cell">{new Date(indent.createdAt).toLocaleDateString()}</td>
+                      <td className="table-cell text-center"><span className="badge bg-emerald-50 text-emerald-600">{indent.status}</span></td>
+                      <td className="table-cell text-center">
+                        <button
+                          onClick={() => { setSelectedIndentForBid(indent); setBidVendorId(''); setBidAmount(''); setIsBidModalOpen(true); }}
+                          className="btn-primary py-2 px-4 text-[9px] uppercase tracking-widest"
+                        >
+                          Raise Bid
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div className="card overflow-hidden">
+          <div className="p-4 border-b border-slate-200 bg-slate-50/50">
+            <h2 className="text-sm font-black uppercase tracking-widest text-slate-700">Open PO Requests</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs box-border">
+              <thead className="bg-[#fcfdfe] border-b border-slate-200">
+                <tr>
+                  <th className="table-header py-5">PO Number</th>
+                  <th className="table-header">Date</th>
+                  <th className="table-header text-right">Value</th>
+                  <th className="table-header text-center whitespace-nowrap">Status</th>
+                  <th className="table-header text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {purchaseOrders.filter(po => po.status === 'Approved').length === 0 ? (
+                  <tr><td colSpan={5} className="p-8 text-center text-slate-500">No approved PO requests available.</td></tr>
+                ) : purchaseOrders.filter(po => po.status === 'Approved').map(po => (
+                  <tr key={po.id} className="table-row hover:bg-slate-50">
+                    <td className="table-cell font-bold text-slate-800">{po.poNo}</td>
+                    <td className="table-cell">{new Date(po.createdAt).toLocaleDateString()}</td>
+                    <td className="table-cell text-right font-black">₹{Number(po.totalValue).toLocaleString()}</td>
+                    <td className="table-cell text-center"><span className="badge bg-emerald-50 text-emerald-600">{po.status}</span></td>
+                    <td className="table-cell text-center">
+                      <div className="flex justify-center items-center gap-2">
+                        <button
+                          onClick={() => { setSelectedIndentForBid(po); setIsBidModalOpen(true); }}
+                          className="btn-primary py-2 px-4 text-[9px] uppercase tracking-widest"
+                        >
+                          Generate PO-Invoice
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedPOForDelivery(po);
+                            setDeliveryStatus(po.deliveryStatus || 'Not Started');
+                            setDispatchDate(po.dispatchDate ? new Date(po.dispatchDate).toISOString().slice(0, 16) : '');
+                            setArrivalTime(po.arrivalTime ? new Date(po.arrivalTime).toISOString().slice(0, 16) : '');
+                            setIsDeliveryModalOpen(true);
+                          }}
+                          className="btn-secondary py-2 px-4 text-[9px] uppercase tracking-widest"
+                        >
+                          Track Delivery
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <VendorFormModal 
         isOpen={isModalOpen}
@@ -276,6 +468,116 @@ export default function VendorManagement() {
                 >
                     Confirm Delete
                 </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isBidModalOpen && selectedIndentForBid && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden p-8">
+            <h3 className="text-lg font-black text-slate-800 tracking-tight mb-1">Raise Bid</h3>
+            <p className="text-xs text-slate-400 font-medium mb-4">Indent: <span className="font-black text-slate-700">{selectedIndentForBid.indentNo || `IND-${selectedIndentForBid.id}`}</span></p>
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Select Vendor</label>
+                <select 
+                  className="input mt-1" 
+                  value={bidVendorId} 
+                  onChange={e => setBidVendorId(e.target.value)}
+                >
+                  <option value="">-- Choose Vendor --</option>
+                  {flatVendors.map(v => (
+                    <option key={v.id} value={v.id}>{v.companyName}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Bid Amount (₹)</label>
+                <input 
+                  type="number" 
+                  className="input mt-1" 
+                  placeholder="Enter amount"
+                  value={bidAmount}
+                  onChange={e => setBidAmount(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button 
+                  onClick={() => { setIsBidModalOpen(false); setSelectedIndentForBid(null); }}
+                  className="flex-1 py-3 bg-slate-100 text-slate-500 text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-slate-200 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleCreateBid}
+                  className="flex-1 py-3 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-emerald-900/20 hover:bg-emerald-700 active:scale-95 transition-all"
+                >
+                  Submit Bid
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isDeliveryModalOpen && selectedPOForDelivery && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden p-8">
+            <h3 className="text-lg font-black text-slate-800 tracking-tight mb-4">Update Delivery Status</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</label>
+                <select 
+                  className="input mt-1" 
+                  value={deliveryStatus} 
+                  onChange={e => setDeliveryStatus(e.target.value)}
+                >
+                  <option value="Not Started">Not Started</option>
+                  <option value="Packaging">Packaging</option>
+                  <option value="Dispatched">Dispatched</option>
+                  <option value="Arrived">Arrived</option>
+                </select>
+              </div>
+              
+              {deliveryStatus === 'Dispatched' && (
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Dispatch Date & Time</label>
+                  <input 
+                    type="datetime-local" 
+                    className="input mt-1" 
+                    value={dispatchDate}
+                    onChange={e => setDispatchDate(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {deliveryStatus === 'Arrived' && (
+                <div>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Arrival Date & Time</label>
+                  <input 
+                    type="datetime-local" 
+                    className="input mt-1" 
+                    value={arrivalTime}
+                    onChange={e => setArrivalTime(e.target.value)}
+                  />
+                </div>
+              )}
+              
+              <div className="flex gap-3 mt-6">
+                <button 
+                  onClick={() => { setIsDeliveryModalOpen(false); setSelectedPOForDelivery(null); }}
+                  className="flex-1 py-3 bg-slate-100 text-slate-500 text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-slate-200 transition-all"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleUpdateDelivery}
+                  className="flex-1 py-3 bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-emerald-900/20 hover:bg-emerald-700 active:scale-95 transition-all"
+                >
+                  Update
+                </button>
+              </div>
             </div>
           </div>
         </div>

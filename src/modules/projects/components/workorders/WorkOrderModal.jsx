@@ -4,7 +4,7 @@ import { subcontractorAPI, inventoryAPI } from '../../../operations/services';
 
 const statusOptions = ['pending', 'approved', 'rejected'];
 
-export default function WorkOrderModal({ isOpen, isEditing, formData, isSaving, onClose, onSave, onInputChange, projects = [] }) {
+export default function WorkOrderModal({ isOpen, isEditing, formData, isSaving, onClose, onSave, onInputChange, projects = [], sites = [] }) {
     const [boqItems, setBoqItems] = useState([]);
     const [billingMilestones, setBillingMilestones] = useState([]);
     const [approvals, setApprovals] = useState({ siteEngineer: false, projectManager: false, departmentHead: false });
@@ -116,8 +116,13 @@ export default function WorkOrderModal({ isOpen, isEditing, formData, isSaving, 
                                 </select>
                             </div>
                             <div className="space-y-1.5 md:col-span-1">
-                                <label className="text-xs font-semibold text-slate-600">Work Order No <span className="text-slate-400 font-normal">(Auto-generated if blank)</span></label>
-                                <input disabled={isEditing} required name="workOrderNo" value={formData.workOrderNo || ''} onChange={onInputChange} className="input disabled:opacity-50" placeholder="e.g. WO-2026-001" />
+                                <label className="text-xs font-semibold text-slate-600">Site</label>
+                                <select name="siteId" value={formData.siteId || ''} onChange={onInputChange} className="input">
+                                    <option value="">Select Site (Optional)</option>
+                                    {sites.filter(s => !formData.projectId || String(s.projectId) === String(formData.projectId)).map(s => (
+                                        <option key={s.id} value={s.id}>{s.name || s.siteCode}</option>
+                                    ))}
+                                </select>
                             </div>
                             <div className="space-y-1.5 md:col-span-1">
                                 <label className="text-xs font-semibold text-slate-600">Title <span className="text-red-500">*</span></label>

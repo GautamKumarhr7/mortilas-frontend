@@ -9,32 +9,41 @@ import { authAPI } from '../modules/auth/services';
 export default function AppLayout() {
     const dispatch = useDispatch();
     const { activeModule, sidebarOpen } = useSelector((state) => state.ui);
-    const { roleId, userProfile, isLoggedIn } = useSelector((state) => state.auth);
+    const { roleId, userProfile, isLoggedIn, userType } = useSelector((state) => state.auth);
     const { modules } = useSelector((state) => state.permissions);
     const userRole = roleId || userProfile?.designationId;
 
     useEffect(() => {
         const fetchPermissions = async () => {
-            if (isLoggedIn && userRole && (!modules || modules.length === 0)) {
-                dispatch(setPermissionsStart());
-                try {
-                    const permResponse = await authAPI.getRolePermissions(userRole);
-                    const dataArray = Array.isArray(permResponse) ? permResponse : (permResponse.data || permResponse);
-                    dispatch(setPermissionsSuccess(Array.isArray(dataArray) ? dataArray : []));
-                } catch (error) {
-                    console.error("Failed to fetch permissions on reload", error);
-                    // Provide fallback modules so the sidebar isn't empty if backend fails
-                    const fallbackModules = [
-                        { id: 'dash-fallback', name: 'Dashboard', code: 'dashboard' },
-                        { id: 'hr-fallback', name: 'HR', code: 'hr' }
-                    ];
-                    dispatch(setPermissionsSuccess(fallbackModules));
+            if (isLoggedIn && (!modules || modules.length === 0)) {
+                if (userType === 'vendor') {
+                    dispatch(setPermissionsSuccess([
+                        { id: 'vendor-dashboard', name: 'Vendor Dashboard', code: 'vendor-dashboard' }
+                    ]));
+                    return;
+                }
+
+                if (userRole) {
+                    dispatch(setPermissionsStart());
+                    try {
+                        const permResponse = await authAPI.getRolePermissions(userRole);
+                        const dataArray = Array.isArray(permResponse) ? permResponse : (permResponse.data || permResponse);
+                        dispatch(setPermissionsSuccess(Array.isArray(dataArray) ? dataArray : []));
+                    } catch (error) {
+                        console.error("Failed to fetch permissions on reload", error);
+                        // Provide fallback modules so the sidebar isn't empty if backend fails
+                        const fallbackModules = [
+                            { id: 'dash-fallback', name: 'Dashboard', code: 'dashboard' },
+                            { id: 'hr-fallback', name: 'HR', code: 'hr' }
+                        ];
+                        dispatch(setPermissionsSuccess(fallbackModules));
+                    }
                 }
             }
         };
 
         fetchPermissions();
-    }, [isLoggedIn, userRole, dispatch, modules?.length]);
+    }, [isLoggedIn, userRole, userType, dispatch, modules?.length]);
 
     return (
         <div className="min-h-screen bg-[#eef2f0] text-slate-800 print:bg-white print:p-0">

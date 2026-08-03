@@ -4,6 +4,7 @@ import { Building2, Search, Plus, MapPin, Settings2, Trash2, ShieldAlert, Refres
 import toast from 'react-hot-toast';
 import { confirmToast } from '../../../utils/toastUtils';
 import { siteAPI } from '../services';
+import { employeeAPI } from '../../hr/services';
 
 import SiteStats from '../components/sites/SiteStats';
 import SiteModal from '../components/sites/SiteModal';
@@ -13,6 +14,7 @@ export default function SiteManagement() {
 
     const [sites, setSites] = useState([]);
     const [isLoadingSites, setIsLoadingSites] = useState(true);
+    const [employees, setEmployees] = useState([]);
     const [isSaving, setIsSaving] = useState(false);
     const [search, setSearch] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -46,6 +48,19 @@ export default function SiteManagement() {
         fetchSites();
     }, [fetchSites]);
 
+    const fetchEmployees = useCallback(async () => {
+        try {
+            const data = await employeeAPI.getAllEmployees();
+            setEmployees(data?.data || data || []);
+        } catch (error) {
+            console.error('Failed to fetch employees:', error);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchEmployees();
+    }, [fetchEmployees]);
+
     // ─── Derived stats ───────────────────────────────────────────────────────
     const filteredSites = useMemo(() =>
         sites.filter(s =>
@@ -66,7 +81,7 @@ export default function SiteManagement() {
     // ─── Handlers ────────────────────────────────────────────────────────────
     const handleAddSite = () => {
         setIsEditing(false);
-        setFormData({ status: 'active', complexity: 'Medium', count: 0, budget: 0, rating: 3 });
+        setFormData({ status: 'planning', type: 'construction' });
         setIsModalOpen(true);
     };
 
@@ -98,13 +113,13 @@ export default function SiteManagement() {
                 const payload = {
                     projectId: Number(formData.projectId),
                     name: formData.name,
-                    location: formData.location,
-                    supervisor: formData.supervisor,
-                    count: Number(formData.count) || Number(formData.manpower) || 0,
-                    budget: Number(formData.budget),
-                    complexity: (formData.complexity || 'Medium').toLowerCase(),
-                    status: (formData.status || 'active').toLowerCase(),
-                    rating: Number(formData.rating) || 3,
+                    type: formData.type || 'construction',
+                    status: formData.status || 'planning',
+                    siteManagerId: Number(formData.siteManagerId),
+                    latitude: formData.latitude ? Number(formData.latitude) : null,
+                    longitude: formData.longitude ? Number(formData.longitude) : null,
+                    state: formData.state,
+                    city: formData.city,
                 };
                 await siteAPI.updateSite(siteId, payload);
                 toast.success('Site updated');
@@ -112,13 +127,13 @@ export default function SiteManagement() {
                 const payload = {
                     projectId: Number(formData.projectId),
                     name: formData.name,
-                    location: formData.location,
-                    supervisor: formData.supervisor,
-                    count: Number(formData.count) || Number(formData.manpower) || 0,
-                    budget: Number(formData.budget),
-                    complexity: (formData.complexity || 'Medium').toLowerCase(),
-                    status: (formData.status || 'active').toLowerCase(),
-                    rating: Number(formData.rating) || 3,
+                    type: formData.type || 'construction',
+                    status: formData.status || 'planning',
+                    siteManagerId: Number(formData.siteManagerId),
+                    latitude: formData.latitude ? Number(formData.latitude) : null,
+                    longitude: formData.longitude ? Number(formData.longitude) : null,
+                    state: formData.state,
+                    city: formData.city,
                 };
                 await siteAPI.createSite(payload);
                 toast.success('Site added successfully');
@@ -224,23 +239,23 @@ export default function SiteManagement() {
 
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="p-3 bg-slate-50 rounded-xl">
-                                        <p className="text-xs text-slate-400 mb-0.5">Supervisor</p>
-                                        <p className="text-sm text-slate-700 font-medium truncate">{site.supervisor}</p>
+                                        <p className="text-xs text-slate-400 mb-0.5">Manager ID</p>
+                                        <p className="text-sm text-slate-700 font-medium truncate">User #{site.siteManagerId}</p>
                                     </div>
                                     <div className="p-3 bg-slate-50 rounded-xl">
-                                        <p className="text-xs text-slate-400 mb-0.5">Workforce</p>
-                                        <p className="text-sm text-slate-700 font-medium">{site.count ?? site.manpower ?? 0} Men</p>
+                                        <p className="text-xs text-slate-400 mb-0.5">Type</p>
+                                        <p className="text-sm text-slate-700 font-medium">{site.type}</p>
                                     </div>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="p-3 bg-slate-50 rounded-xl">
-                                        <p className="text-xs text-slate-400 mb-0.5">Budget</p>
-                                        <p className="text-sm text-slate-700 font-medium">₹{Number(site.budget || 0).toLocaleString('en-IN')}</p>
+                                        <p className="text-xs text-slate-400 mb-0.5">Location</p>
+                                        <p className="text-sm text-slate-700 font-medium">{site.city || 'N/A'}, {site.state || 'N/A'}</p>
                                     </div>
                                     <div className="p-3 bg-slate-50 rounded-xl">
-                                        <p className="text-xs text-slate-400 mb-0.5">Rating</p>
-                                        <p className="text-sm text-slate-700 font-medium">{'★'.repeat(site.rating || 0)}{'☆'.repeat(5 - (site.rating || 0))}</p>
+                                        <p className="text-xs text-slate-400 mb-0.5">Site Code</p>
+                                        <p className="text-sm text-slate-700 font-medium">{site.siteCode}</p>
                                     </div>
                                 </div>
 
@@ -282,6 +297,7 @@ export default function SiteManagement() {
                 isEditing={isEditing}
                 formData={formData}
                 projects={projects}
+                employees={employees}
                 isSaving={isSaving}
                 onClose={() => setIsModalOpen(false)}
                 onSave={handleSave}

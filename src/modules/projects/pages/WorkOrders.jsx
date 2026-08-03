@@ -3,7 +3,7 @@ import { Plus, ClipboardList, AlertCircle, TrendingUp, CheckCircle2, RefreshCw }
 import { useApp } from '../../../hooks/useApp';
 import toast from 'react-hot-toast';
 import { confirmToast } from '../../../utils/toastUtils';
-import { workOrderAPI, projectAPI } from '../services';
+import { workOrderAPI, projectAPI, siteAPI } from '../services';
 import { subcontractorAPI } from '../../operations/services';
 
 // Sub-components
@@ -31,6 +31,7 @@ export default function WorkOrders() {
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState({});
     const [projectList, setProjectList] = useState([]);
+    const [siteList, setSiteList] = useState([]);
 
     // ─── Fetch all work orders ────────────────────────────────────────────────
     const fetchWorkOrders = useCallback(async () => {
@@ -63,7 +64,6 @@ export default function WorkOrders() {
     const fetchProjects = async () => {
         try {
             const res = await projectAPI.getAllProjects();
-            // res is axios response, res.data is { success: true, data: [...] }
             const list = res?.data?.data || res?.data || [];
             setProjectList(Array.isArray(list) ? list : []);
         } catch (error) {
@@ -71,9 +71,20 @@ export default function WorkOrders() {
         }
     };
 
+    const fetchSites = async () => {
+        try {
+            const res = await siteAPI.getAllSites();
+            const list = res?.data?.data || res?.data || res || [];
+            setSiteList(Array.isArray(list) ? list : []);
+        } catch (error) {
+            console.error('Fetch sites error:', error);
+        }
+    };
+
     useEffect(() => {
         fetchWorkOrders();
         fetchProjects();
+        fetchSites();
     }, [fetchWorkOrders]);
 
     // ─── Derived / memoised ───────────────────────────────────────────────────
@@ -145,7 +156,7 @@ export default function WorkOrders() {
             // Build the exact payload the API expects
             const payload = {
                 projectId: Number(dataToSave.projectId),
-                workOrderNo: dataToSave.workOrderNo || undefined,
+                siteId: dataToSave.siteId ? Number(dataToSave.siteId) : null,
                 title: dataToSave.title || '',
                 subcontractorId: dataToSave.subcontractorId || null,
                 description: dataToSave.description || '',
@@ -181,16 +192,7 @@ export default function WorkOrders() {
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
-        setFormData(prev => {
-            const next = { ...prev, [name]: value };
-            if (name === 'projectId' && !isEditing) {
-                const proj = projectList.find(p => String(p.id) === String(value));
-                if (proj && proj.projectCode) {
-                    next.workOrderNo = 'WO-' + proj.projectCode;
-                }
-            }
-            return next;
-        });
+        setFormData(prev => ({ ...prev, [name]: value }));
     };
 
     // ─── Render ───────────────────────────────────────────────────────────────
@@ -271,6 +273,7 @@ export default function WorkOrders() {
                 isEditing={isEditing}
                 formData={formData}
                 projects={projectList}
+                sites={siteList}
                 isSaving={isSaving}
                 onClose={() => setIsModalOpen(false)}
                 onSave={handleSave}

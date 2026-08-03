@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useApp } from '../../../../hooks/useApp';
-import { inventoryAPI, materialIndentAPI } from '../../services';
+import { inventoryAPI, materialIndentAPI, materialIndentItemAPI } from '../../services';
 import { workOrderAPI } from '../../../projects/services';
 import toast from 'react-hot-toast';
 
-export default function IndentModal({ isOpen, onClose, onSave }) {
+export default function IndentModal({ isOpen, isEditing, indentData, onClose, onSave }) {
   const { userProfile } = useApp();
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState({ workOrderId: '', requestedBy: userProfile?.id || userProfile?._id || '' });
@@ -15,18 +15,70 @@ export default function IndentModal({ isOpen, onClose, onSave }) {
 
   useEffect(() => {
     if (isOpen) {
-      setFormData(prev => ({ ...prev, requestedBy: userProfile?.id || userProfile?._id || '' }));
+      if (isEditing && indentData) {
+        setFormData({
+          workOrderId: indentData.workOrderId || '',
+          requestedBy: indentData.requestedBy || userProfile?.id || userProfile?._id || '',
+          status: indentData.status || 'Pending',
+        });
+      } else {
+        setFormData(prev => ({ ...prev, workOrderId: '', requestedBy: userProfile?.id || userProfile?._id || '' }));
+        setItems([]);
+      }
+
       Promise.all([
         inventoryAPI.getAllMaterials().catch(() => []),
         workOrderAPI.getAllWorkOrders().catch(() => [])
-      ]).then(([resMat, resWo]) => {
+      ]).then(async ([resMat, resWo]) => {
         setMaterials(Array.isArray(resMat) ? resMat : (resMat?.data || []));
         setApiWorkOrders(Array.isArray(resWo) ? resWo : (resWo?.data || []));
+        
+        if (isEditing && indentData) {
+          try {
+             const allItemsRes = await materialIndentItemAPI.getAllMaterialIndentItems();
+             const allItems = Array.isArray(allItemsRes) ? allItemsRes : (allItemsRes?.data?.materialIndentItems || allItemsRes?.data || []);
+             const thisIndentItems = allItems.filter(i => String(i.indentId) === String(indentData.id || indentData._id));
+             if (thisIndentItems.length > 0) {
+                 setItems(thisIndentItems.map(i => ({ itemId: i.itemId, requiredQty: i.requiredQty })));
+             }
+          } catch(e) { console.error(e); }
+        }
       }).catch(console.error);
     }
-  }, [isOpen, userProfile]);
+  }, [isOpen, userProfile, isEditing, indentData]);
 
   if (!isOpen) return null;
+
+  const handleWorkOrderChange = (e) => {
+    const woId = e.target.value;
+    setFormData(prev => ({ ...prev, workOrderId: woId }));
+
+    if (woId) {
+      const selectedWo = apiWorkOrders.find(wo => String(wo.id || wo._id) === String(woId));
+      let boq = selectedWo?.boqItems || [];
+      if (typeof boq === 'string') {
+        try { boq = JSON.parse(boq); } catch (err) { boq = []; }
+      }
+
+      if (boq && Array.isArray(boq) && boq.length > 0) {
+        const newItems = boq.map(b => {
+          const mat = materials.find(m => 
+            (m.itemName || m.name || m.description)?.toLowerCase().trim() === (b.description || '').toLowerCase().trim()
+          );
+          return {
+            itemId: mat ? String(mat.id || mat._id) : '',
+            fallbackName: !mat ? b.description : '',
+            requiredQty: b.quantity || '',
+          };
+        });
+        setItems(newItems);
+      } else {
+        setItems([]);
+      }
+    } else {
+      setItems([]);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -52,14 +104,20 @@ export default function IndentModal({ isOpen, onClose, onSave }) {
       const payload = {
         workOrderId: formData.workOrderId,
         requestedBy: formData.requestedBy,
+        status: formData.status,
         items: items.map(item => ({
           itemId: parseInt(item.itemId, 10),
           requiredQty: parseInt(item.requiredQty, 10),
         }))
       };
       
-      await materialIndentAPI.createMaterialIndent(payload);
-      toast.success('Material Indent raised successfully!');
+      if (isEditing && indentData) {
+          await materialIndentAPI.updateMaterialIndent(indentData.id || indentData._id, payload);
+          toast.success('Material Indent updated successfully!');
+      } else {
+          await materialIndentAPI.createMaterialIndent(payload);
+          toast.success('Material Indent raised successfully!');
+      }
       onSave && onSave();
       onClose();
     } catch (error) {
@@ -74,8 +132,8 @@ export default function IndentModal({ isOpen, onClose, onSave }) {
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-fade-in">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <h2 className="text-lg font-black text-slate-800 tracking-tight">Raise Material Indent</h2>
-          <button onClick={onClose} className="text-slate-400 hover:bg-slate-100 p-1.5 rounded-xl transition-colors">
+          <h2 className="text-lg font-black text-slate-800 tracking-tight">{isEditing ? 'Edit Material Indent' : 'Raise Material Indent'}</h2>
+          <button type="button" onClick={onClose} className="text-slate-400 hover:bg-slate-100 p-1.5 rounded-xl transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -84,7 +142,7 @@ export default function IndentModal({ isOpen, onClose, onSave }) {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-700">Project / Work Order</label>
-              <select className="input w-full" value={formData.workOrderId} onChange={e => setFormData({...formData, workOrderId: e.target.value})}>
+              <select className="input w-full" value={formData.workOrderId} onChange={handleWorkOrderChange}>
                 <option value="">Select Work Order...</option>
                 {apiWorkOrders?.map(wo => (
                   <option key={wo.id || wo._id} value={wo.id || wo._id}>
@@ -97,6 +155,20 @@ export default function IndentModal({ isOpen, onClose, onSave }) {
               <label className="text-xs font-semibold text-slate-700">Requested By (User ID)</label>
               <input type="text" className="input w-full bg-slate-50 cursor-not-allowed" value={formData.requestedBy} readOnly disabled />
             </div>
+            {isEditing && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700">Status</label>
+                <select
+                  className="input w-full"
+                  value={formData.status || 'Pending'}
+                  onChange={e => setFormData(prev => ({ ...prev, status: e.target.value }))}
+                >
+                  {['Pending', 'Approved', 'Rejected', 'Partially Fulfilled', 'Fulfilled'].map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           <div>
@@ -114,6 +186,11 @@ export default function IndentModal({ isOpen, onClose, onSave }) {
                             const newItems = [...items]; newItems[idx].itemId = e.target.value; setItems(newItems);
                         }}>
                             <option value="">Select Material...</option>
+                            {item.fallbackName && !item.itemId && (
+                                <option value="" disabled className="text-red-500">
+                                    Unknown: {item.fallbackName}
+                                </option>
+                            )}
                             {materials.map(m => (
                                 <option key={m.id || m._id} value={m.id || m._id}>
                                     {m.itemName || m.name || m.description || `Item #${m.id || m._id}`}

@@ -49,11 +49,19 @@ const Login = () => {
         token: accessToken,
         refreshToken: refreshToken,
         roleId: roleId || userRole,
+        userType: profile?.accountType || 'employee',
         userProfile: profile
       }));
 
-      // 6. Fetch role permissions if roleId exists
-      if (roleId) {
+      // 6. Fetch role permissions if roleId exists and not a vendor
+      if (profile?.accountType === 'vendor') {
+        dispatch(setPermissionsSuccess([
+          { id: 'vendor-dashboard', name: 'Vendor Dashboard', code: 'vendor-dashboard' }
+        ]));
+        // Set default module for vendors
+        const { setActiveModule } = await import('../../../store/slices/uiSlice');
+        dispatch(setActiveModule('vendor-dashboard'));
+      } else if (roleId) {
         dispatch(setPermissionsStart());
         try {
            const permResponse = await authAPI.getRolePermissions(roleId);
