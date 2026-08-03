@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { projectAPI } from '../api/project';
+import { projectAPI } from '../modules/projects/services';
 import { AppContext } from './AppContextValue';
 
 const initialProjects = [];

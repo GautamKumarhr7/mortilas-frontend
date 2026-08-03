@@ -1,7 +1,7 @@
 import { Search, Menu, X, ChevronDown, Zap, LogOut, User, Settings, Mail as MailIcon, LogIn } from 'lucide-react';
 import { useApp } from '../hooks/useApp';
 import { useState, useEffect, useRef } from 'react';
-import { axiosInstance } from '../api/axios';
+import axiosInstance from '../utils/axios';
 import toast from 'react-hot-toast';
 import { MODULE_TITLES } from '../constants/navigation';
 
