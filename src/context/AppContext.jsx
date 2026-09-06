@@ -132,7 +132,7 @@ export function AppProvider({ children }) {
     const [sites, setSites] = useState(initialSites);
     const [progressTasks, setProgressTasks] = useState(initialProgressTasks);
     const [selectedInvoice, setSelectedInvoice] = useState(null);
-    const [selectedVoucher, setSelectedVoucher] = useState(null);
+    const [selectedVoucherType, setSelectedVoucherType] = useState(null);
 
     const fetchProfile = async () => {};
 
@@ -227,7 +227,7 @@ export function AppProvider({ children }) {
             sites, setSites, updateSite,
             progressTasks, setProgressTasks, updateProgressTask,
             selectedInvoice, setSelectedInvoice,
-            selectedVoucher, setSelectedVoucher,
+            selectedVoucherType, setSelectedVoucherType,
             isLoggedIn, userRole, userProfile, login, logout
         }}>
             {children}
