@@ -33,8 +33,9 @@ import Invoicing from "../modules/finance/pages/Invoicing";
 import InvoiceDetail from "../modules/finance/pages/InvoiceDetail";
 import JobCosting from "../modules/finance/pages/JobCosting";
 import TDSManagement from "../modules/finance/pages/TDSManagement";
-import VoucherDetail from "../modules/finance/pages/VoucherDetail";
 import Vouchers from "../modules/finance/pages/Vouchers";
+import VoucherEntry from "../modules/finance/pages/VoucherEntry";
+import Ledger from "../modules/finance/pages/Ledger";
 import ApplyLeave from "../modules/hr/pages/ApplyLeave";
 import Attendance from "../modules/hr/pages/Attendance";
 import EmployeeDetails from "../modules/hr/pages/EmployeeDetails";
@@ -74,6 +75,8 @@ export const MODULE_TITLES = {
   "chart-of-accounts": "Chart of Accounts",
   "bank-management": "Bank Management",
   vouchers: "Voucher Management",
+  "voucher-entry": "Voucher Entry",
+  ledger: "Bank Ledger",
   invoicing: "Invoicing & Billing",
   "accounts-payable": "Accounts Payable",
   "accounts-receivable": "Accounts Receivable",
@@ -228,6 +231,8 @@ export const PAGE_COMPONENTS = {
   "chart-of-accounts": ChartOfAccounts,
   "bank-management": BankManagement,
   vouchers: Vouchers,
+  "voucher-entry": VoucherEntry,
+  ledger: Ledger,
   invoicing: Invoicing,
   "accounts-payable": AccountsPayable,
   "accounts-receivable": AccountsReceivable,
@@ -236,7 +241,6 @@ export const PAGE_COMPONENTS = {
   "bank-reconciliation": BankReconciliation,
   "job-costing": JobCosting,
   "invoice-detail": InvoiceDetail,
-  "voucher-detail": VoucherDetail,
   procurement: Procurement,
   "material-indent-items": MaterialIndentItems,
   inventory: InventoryStore,
@@ -327,7 +331,7 @@ const DB_CODE_TO_MODULE_MAP = {
 
   // Finance & Accounting
   "vochr-enty": "vouchers",
-  "ledgerr-mnt": "chart-of-accounts",
+  "ledgerr-mnt": "ledger",
   bnk: "bank-management",
   tds: "tds-management",
   inv: "invoicing",

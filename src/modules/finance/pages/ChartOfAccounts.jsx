@@ -12,16 +12,16 @@ const buildTree = (flatList) => {
     const map = {};
     const roots = [];
     
-    // First pass: map everything by code
+    // First pass: map everything by ID
     flatList.forEach(item => {
-        map[item.code] = { ...item, subAccounts: [] };
+        map[item.id] = { ...item, subAccounts: [] };
     });
     
     // Second pass: assign to parents
     flatList.forEach(item => {
-        const node = map[item.code];
-        if (item.parents && map[item.parents]) {
-            map[item.parents].subAccounts.push(node);
+        const node = map[item.id];
+        if (item.parentId && map[item.parentId]) {
+            map[item.parentId].subAccounts.push(node);
         } else {
             roots.push(node);
         }
@@ -31,11 +31,11 @@ const buildTree = (flatList) => {
 };
 
 const typeBadge = {
-    'Asset': 'badge-blue',
-    'Liability': 'badge-red',
-    'Income': 'badge-green',
-    'Expense': 'badge-yellow',
-    'Equity': 'badge-purple',
+    'ASSET': 'badge-blue',
+    'LIABILITY': 'badge-red',
+    'REVENUE': 'badge-green',
+    'EXPENSE': 'badge-yellow',
+    'EQUITY': 'badge-purple',
 };
 
 const AccountRow = ({ account, depth = 0, onEdit }) => {
@@ -45,7 +45,7 @@ const AccountRow = ({ account, depth = 0, onEdit }) => {
     return (
         <>
             <tr className={`table-row hover:bg-slate-50 transition-colors ${depth === 0 ? 'bg-slate-50/50' : ''}`}>
-                <td className="table-cell w-12 text-center font-medium text-slate-500">{account.code}</td>
+                <td className="table-cell w-12 text-center font-medium text-slate-500">{account.accountCode}</td>
                 <td className="table-cell">
                     <div style={{ paddingLeft: `${depth * 20}px` }} className="flex items-center gap-2">
                         {hasSubs ? (
@@ -55,22 +55,29 @@ const AccountRow = ({ account, depth = 0, onEdit }) => {
                         ) : (
                             <div className="w-5" />
                         )}
-                        <span className={`text-slate-800 ${depth === 0 ? 'font-semibold' : 'font-medium'} text-sm`}>{account.name}</span>
-                        <span className="text-xs text-slate-400 ml-2">{account.parents ? `(Under ${account.parents})` : '(Root)'}</span>
+                        <span className={`text-slate-800 ${depth === 0 ? 'font-semibold' : 'font-medium'} text-sm`}>{account.accountName}</span>
+                        {account.isGroup && <span className="badge badge-blue ml-2 text-[10px] py-0.5 px-1.5">Group</span>}
                     </div>
                 </td>
                 <td className="table-cell">
-                    <span className={`badge ${typeBadge[account.type] || 'badge-blue'}`}>{account.type}</span>
+                    <span className={`badge ${typeBadge[account.accountType] || 'badge-blue'}`}>{account.accountType}</span>
                 </td>
-                <td className="table-cell text-emerald-600 font-semibold">₹{((account.balance || 0) / 100000).toFixed(2)}L</td>
+                <td className="table-cell">
+                    <span className="text-slate-500 text-xs font-medium bg-slate-100 px-2 py-1 rounded">{account.accountNature || 'N/A'}</span>
+                </td>
                 <td className="table-cell" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center gap-1 opacity-100 transition-all">
                         <button onClick={() => onEdit(account)} className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded text-slate-500 hover:text-emerald-600 transition-all cursor-pointer">
                             <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button onClick={() => {
-                            confirmToast(`Delete account ${account.name} permanently?`, () => {
-                                toast.error('Account deletion is locked');
+                            confirmToast(`Deactivate account ${account.accountName}?`, async () => {
+                                try {
+                                    await accountAPI.deactivateAccount(account.id);
+                                    toast.success('Account deactivated');
+                                } catch (e) {
+                                    toast.error('Failed to deactivate');
+                                }
                             });
                         }} className="p-1.5 bg-slate-100 hover:bg-red-50 rounded text-slate-500 hover:text-red-600 transition-all cursor-pointer">
                             <Trash2 className="w-3.5 h-3.5" />
@@ -79,7 +86,7 @@ const AccountRow = ({ account, depth = 0, onEdit }) => {
                 </td>
             </tr>
             {isExpanded && hasSubs && account.subAccounts.map(sub => (
-                <AccountRow key={sub.code} account={sub} depth={depth + 1} onEdit={onEdit} />
+                <AccountRow key={sub.accountCode} account={sub} depth={depth + 1} onEdit={onEdit} />
             ))}
         </>
     );
@@ -109,27 +116,25 @@ export default function ChartOfAccounts() {
     }, [fetchAccounts]);
 
     const [formData, setFormData] = useState({
-        code: '',
-        name: '',
-        type: 'Expense',
-        balance: 0,
-        parents: ''
+        accountName: '',
+        accountType: 'EXPENSE',
+        parentId: '',
+        isGroup: false
     });
 
     const handleOpenAdd = () => {
         setEditingId(null);
-        setFormData({ code: '', name: '', type: 'Asset', balance: 0, parents: '' });
+        setFormData({ accountName: '', accountType: 'ASSET', parentId: '', isGroup: false });
         setIsModalOpen(true);
     };
 
     const handleOpenEdit = (acc) => {
-        setEditingId(acc.code);
+        setEditingId(acc.id);
         setFormData({
-            code: acc.code,
-            name: acc.name,
-            type: acc.type,
-            balance: acc.balance || 0,
-            parents: acc.parents || ''
+            accountName: acc.accountName,
+            accountType: acc.accountType,
+            parentId: acc.parentId || '',
+            isGroup: acc.isGroup || false
         });
         setIsModalOpen(true);
     };
@@ -139,7 +144,7 @@ export default function ChartOfAccounts() {
         try {
             const payload = {
                 ...formData,
-                balance: Number(formData.balance)
+                parentId: formData.parentId ? Number(formData.parentId) : null
             };
 
             if (editingId) {
@@ -203,14 +208,14 @@ export default function ChartOfAccounts() {
                     <table className="w-full text-sm">
                         <thead className="bg-slate-50 border-b border-slate-200">
                             <tr>
-                                {['Code', 'Account Name', 'Type', 'Balance', 'Actions'].map(h => (
+                                {['Code', 'Account Name', 'Type', 'Nature', 'Actions'].map(h => (
                                     <th key={h} className="table-header">{h}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
                             {accounts.map(acc => (
-                                <AccountRow key={acc.code} account={acc} onEdit={handleOpenEdit} />
+                                <AccountRow key={acc.accountCode} account={acc} onEdit={handleOpenEdit} />
                             ))}
                         </tbody>
                     </table>
@@ -234,40 +239,40 @@ export default function ChartOfAccounts() {
                         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-semibold text-slate-600">Account Code</label>
-                                    <input required value={formData.code} onChange={e => setFormData({...formData, code: e.target.value})} className="input" placeholder="e.g. AC-1021" />
+                                    <label className="text-xs font-semibold text-slate-600">Account Name</label>
+                                    <input required value={formData.accountName} onChange={e => setFormData({...formData, accountName: e.target.value})} className="input" placeholder="e.g. Current Assets" />
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="text-xs font-semibold text-slate-600">Account Type</label>
-                                    <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="input">
-                                        <option value="Asset">Asset</option>
-                                        <option value="Liability">Liability</option>
-                                        <option value="Equity">Equity</option>
-                                        <option value="Income">Income</option>
-                                        <option value="Expense">Expense</option>
+                                    <select value={formData.accountType} onChange={e => setFormData({...formData, accountType: e.target.value})} className="input">
+                                        <option value="ASSET">Asset</option>
+                                        <option value="LIABILITY">Liability</option>
+                                        <option value="EQUITY">Equity</option>
+                                        <option value="REVENUE">Revenue</option>
+                                        <option value="EXPENSE">Expense</option>
                                     </select>
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-semibold text-slate-600">Account Name</label>
-                                    <input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="input" placeholder="e.g. Material Purchase" />
+                                    <label className="text-xs font-semibold text-slate-600">Parent Account</label>
+                                    <select value={formData.parentId} onChange={e => setFormData({...formData, parentId: e.target.value})} className="input">
+                                        <option value="">None (Root Level)</option>
+                                        {flatData.filter(a => a.isGroup).map(a => (
+                                            <option key={a.id} value={a.id}>{a.accountCode} - {a.accountName}</option>
+                                        ))}
+                                    </select>
                                 </div>
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-semibold text-slate-600">Initial Balance (₹)</label>
-                                    <input type="number" value={formData.balance} onChange={e => setFormData({...formData, balance: e.target.value})} className="input" placeholder="0" />
+                                <div className="space-y-1.5 pt-6">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox" checked={formData.isGroup} onChange={e => setFormData({...formData, isGroup: e.target.checked})} className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4" />
+                                        <span className="text-sm font-medium text-slate-700">Is Group Account</span>
+                                    </label>
+                                    <p className="text-xs text-slate-400 mt-1">Group accounts contain sub-accounts and cannot be used in transactions directly.</p>
                                 </div>
                             </div>
 
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-semibold text-slate-600">Parent Account (Code)</label>
-                                <select value={formData.parents} onChange={e => setFormData({...formData, parents: e.target.value})} className="input">
-                                    <option value="">None (Root Level)</option>
-                                    {flatData.map(a => (
-                                        <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
-                                    ))}
-                                </select>
-                            </div>
+
 
                             <div className="flex gap-3 pt-4 border-t border-slate-100 mt-6">
                                 <button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary flex-1">Cancel</button>
