@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Skeleton from '../../../components/common/Skeleton';
-import { quotationAPI } from '../services';
+import { quotationAPI, tenderAPI } from '../services';
 import { useApp } from '../../../hooks/useApp';
 
 const statusBadge = {
@@ -23,6 +23,7 @@ const statusBadge = {
 export default function Quotations() {
   const { projects } = useApp();
   const [quotes, setQuotes] = useState([]);
+  const [tenders, setTenders] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [search, setSearch] = useState('');
@@ -33,19 +34,30 @@ export default function Quotations() {
   const [selectedQuote, setSelectedQuote] = useState(null);
   
   const [formData, setFormData] = useState({
-    quotationDetails: '', 
     projectId: '', 
+    tenderId: '',
     quoteValue: '', 
     status: 'Draft', 
-    version: 'V1'
+    version: 'V1',
+    materialDetails: []
   });
+
+  const fetchTenders = async () => {
+    try {
+        const res = await tenderAPI.getAllTenders();
+        const data = res?.data?.data || res?.data || res || [];
+        setTenders(Array.isArray(data) ? data : []);
+    } catch (error) {
+        console.error("Failed to fetch tenders:", error);
+    }
+  };
 
   const fetchQuotations = async () => {
     setIsLoading(true);
     try {
         const res = await quotationAPI.getAllQuotations();
         // Defensive check for various potential response keys
-        const data = res?.quotations || res?.data?.quotations || res?.contracts || res?.data?.contracts || res?.data || res || [];
+        const data = res?.data?.data || res?.quotations || res?.data?.quotations || res?.contracts || res?.data?.contracts || res?.data || res || [];
         setQuotes(Array.isArray(data) ? data : []);
     } catch (error) {
         console.error("Failed to fetch quotations:", error);
@@ -57,25 +69,80 @@ export default function Quotations() {
 
   useEffect(() => {
     fetchQuotations();
+    fetchTenders();
   }, []);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     let finalValue = value;
-    if (name === 'quotationDetails' || name === 'version') {
+    if (name === 'version') {
         finalValue = value.toUpperCase();
     }
-    setFormData(prev => ({ ...prev, [name]: finalValue }));
+    
+    setFormData(prev => {
+        const newData = { ...prev, [name]: finalValue };
+        
+        // Auto-populate first material row from tender if selected
+        if (name === 'tenderId' && finalValue) {
+            const selectedTender = tenders.find(t => String(t.id) === String(finalValue));
+            if (selectedTender && newData.materialDetails.length === 0) {
+                newData.materialDetails = [{
+                    id: Date.now(),
+                    name: selectedTender.title || '',
+                    quantity: 1, // Defaulting to 1 if we can't extract numbers easily
+                    price: 0,
+                    amount: 0
+                }];
+            }
+        }
+        return newData;
+    });
+  };
+
+  const handleMaterialChange = (id, field, value) => {
+    setFormData(prev => {
+        const newMaterials = prev.materialDetails.map(mat => {
+            if (mat.id === id) {
+                const updatedMat = { ...mat, [field]: value };
+                if (field === 'quantity' || field === 'price') {
+                    updatedMat.amount = (Number(updatedMat.quantity) || 0) * (Number(updatedMat.price) || 0);
+                }
+                return updatedMat;
+            }
+            return mat;
+        });
+        
+        // Auto-update quote value
+        const newQuoteValue = newMaterials.reduce((sum, mat) => sum + (mat.amount || 0), 0);
+        
+        return { ...prev, materialDetails: newMaterials, quoteValue: newQuoteValue };
+    });
+  };
+
+  const addMaterialRow = () => {
+    setFormData(prev => ({
+        ...prev,
+        materialDetails: [...prev.materialDetails, { id: Date.now(), name: '', quantity: 1, price: 0, amount: 0 }]
+    }));
+  };
+
+  const removeMaterialRow = (id) => {
+    setFormData(prev => {
+        const newMaterials = prev.materialDetails.filter(mat => mat.id !== id);
+        const newQuoteValue = newMaterials.reduce((sum, mat) => sum + (mat.amount || 0), 0);
+        return { ...prev, materialDetails: newMaterials, quoteValue: newQuoteValue };
+    });
   };
 
   const handleOpenEdit = (quote) => {
     setCurrentId(quote.id);
     setFormData({
-        quotationDetails: quote.quotationDetails || quote.referenceId || '',
         projectId: quote.projectId || '',
+        tenderId: quote.tenderId || '',
         quoteValue: quote.quoteValue || quote.contractValue || '',
         status: quote.status || 'Draft',
-        version: quote.version || 'V1'
+        version: quote.version || 'V1',
+        materialDetails: quote.materialDetails || []
     });
     setIsEditing(true);
     setIsModalOpen(true);
@@ -105,11 +172,12 @@ export default function Quotations() {
     setIsSaving(true);
     try {
         const payload = {
-            quotationDetails: formData.quotationDetails.toUpperCase(),
             quoteValue: Number(formData.quoteValue),
-            projectId: Number(formData.projectId),
+            projectId: Number(formData.projectId) || null,
+            tenderId: Number(formData.tenderId) || null,
             status: formData.status,
-            version: formData.version
+            version: formData.version,
+            materialDetails: formData.materialDetails
         };
         if (isEditing) {
             await quotationAPI.updateQuotation(currentId, payload);
@@ -121,7 +189,7 @@ export default function Quotations() {
         fetchQuotations();
         setIsModalOpen(false);
         setIsEditing(false);
-        setFormData({ quotationDetails: '', projectId: '', quoteValue: '', status: 'Draft', version: 'V1' });
+        setFormData({ projectId: '', tenderId: '', quoteValue: '', status: 'Draft', version: 'V1', materialDetails: [] });
     } catch (error) {
         console.error("Save error:", error);
         toast.error('Failed to save quotation');
@@ -342,22 +410,78 @@ export default function Quotations() {
             <form onSubmit={handleSave} className="p-8 space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Quotation Details / ID <span className="text-red-500">*</span></label>
-                        <input name="quotationDetails" required className="input w-full h-12 uppercase font-black" placeholder="e.g. QTN-2024-001" value={formData.quotationDetails} onChange={handleInputChange} />
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Select Project <span className="text-red-500">*</span></label>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Select Tender</label>
                         <div className="relative">
-                            <select name="projectId" required className="input w-full h-12 rounded-xl text-sm font-bold appearance-none bg-white pr-10" value={formData.projectId} onChange={handleInputChange}>
-                                <option value="">-- Choose Project --</option>
-                                {projects.map(p => (
-                                    <option key={p.id} value={p.id}>{p.name} (ID: {p.id})</option>
+                            <select name="tenderId" className="input w-full h-12 rounded-xl text-sm font-bold appearance-none bg-white pr-10" value={formData.tenderId || ''} onChange={handleInputChange}>
+                                <option value="">-- Optional: Link to Tender --</option>
+                                {tenders.map(t => (
+                                    <option key={t.id} value={t.id}>{t.title} ({t.tenderId})</option>
                                 ))}
                             </select>
                             <ChevronDown className="w-4 h-4 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                         </div>
                     </div>
                 </div>
+                
+                {/* Material Details Section */}
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
+                        <h3 className="text-sm font-black text-slate-700">Material Details</h3>
+                        <button type="button" onClick={addMaterialRow} className="text-xs font-bold text-emerald-600 flex items-center gap-1 hover:text-emerald-700">
+                            <Plus className="w-3 h-3" /> Add Item
+                        </button>
+                    </div>
+                    <div className="p-4 space-y-3">
+                        {formData.materialDetails.length === 0 ? (
+                            <p className="text-xs text-slate-400 text-center py-4">No materials added. Select a tender to auto-fill or add manually.</p>
+                        ) : (
+                            formData.materialDetails.map((mat, idx) => (
+                                <div key={mat.id} className="flex flex-wrap md:flex-nowrap gap-3 items-start">
+                                    <div className="w-full md:w-2/5">
+                                        <input 
+                                            placeholder="Material Name" 
+                                            className="input w-full text-xs font-medium" 
+                                            value={mat.name} 
+                                            onChange={(e) => handleMaterialChange(mat.id, 'name', e.target.value)} 
+                                            required
+                                        />
+                                    </div>
+                                    <div className="w-full md:w-1/5">
+                                        <input 
+                                            type="number" 
+                                            placeholder="Qty" 
+                                            className="input w-full text-xs font-medium" 
+                                            value={mat.quantity} 
+                                            onChange={(e) => handleMaterialChange(mat.id, 'quantity', e.target.value)} 
+                                            required
+                                            min="1"
+                                        />
+                                    </div>
+                                    <div className="w-full md:w-1/5">
+                                        <input 
+                                            type="number" 
+                                            placeholder="Price" 
+                                            className="input w-full text-xs font-medium" 
+                                            value={mat.price} 
+                                            onChange={(e) => handleMaterialChange(mat.id, 'price', e.target.value)} 
+                                            required
+                                            min="0"
+                                        />
+                                    </div>
+                                    <div className="w-full md:w-1/5 flex items-center gap-2">
+                                        <div className="input w-full text-xs font-bold text-emerald-700 bg-emerald-50 flex items-center">
+                                            {formatCurrency(mat.amount)}
+                                        </div>
+                                        <button type="button" onClick={() => removeMaterialRow(mat.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg">
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Quote Value (₹) <span className="text-red-500">*</span></label>

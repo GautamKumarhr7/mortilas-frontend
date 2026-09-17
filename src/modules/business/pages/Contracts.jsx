@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Skeleton from '../../../components/common/Skeleton';
-import { contractAPI } from '../services';
+import { contractAPI, tenderAPI } from '../services';
 import { useApp } from '../../../hooks/useApp';
 
 const statusBadge = {
@@ -22,6 +22,7 @@ const statusBadge = {
 export default function Contracts() {
   const { projects } = useApp();
   const [contracts, setContracts] = useState([]);
+  const [tenders, setTenders] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [search, setSearch] = useState('');
@@ -32,8 +33,8 @@ export default function Contracts() {
   const [deleteConfirm, setDeleteConfirm] = useState({ show: false, id: null, name: '' });
   
   const [formData, setFormData] = useState({
-    referenceId: '',
     projectId: '',
+    tenderId: '',
     contractValue: '',
     validity: '',
     status: 'active'
@@ -43,7 +44,7 @@ export default function Contracts() {
     setIsLoading(true);
     try {
         const res = await contractAPI.getAllContracts();
-        const data = res?.contracts || res?.data?.contracts || res?.data || res || [];
+        const data = res?.data?.data || res?.contracts || res?.data?.contracts || res?.data || res || [];
         setContracts(Array.isArray(data) ? data : []);
     } catch (error) {
         console.error("Failed to fetch contracts:", error);
@@ -53,8 +54,19 @@ export default function Contracts() {
     }
   };
 
+  const fetchTenders = async () => {
+    try {
+        const res = await tenderAPI.getAllTenders();
+        const data = res?.data?.data || res?.data || res || [];
+        setTenders(Array.isArray(data) ? data : []);
+    } catch (error) {
+        console.error("Failed to fetch tenders:", error);
+    }
+  };
+
   useEffect(() => {
     fetchContracts();
+    fetchTenders();
   }, []);
 
   const formatCurrency = (val) => {
@@ -103,7 +115,8 @@ export default function Contracts() {
     try {
         const payload = {
             ...formData,
-            projectId: Number(formData.projectId),
+            projectId: Number(formData.projectId) || null,
+            tenderId: Number(formData.tenderId) || null,
             contractValue: Number(formData.contractValue)
         };
 
@@ -129,8 +142,8 @@ export default function Contracts() {
     setIsEditing(true);
     setCurrentId(contract.id);
     setFormData({
-        referenceId: contract.referenceId || contract.ReferenceId || '',
         projectId: contract.projectId || '',
+        tenderId: contract.tenderId || '',
         contractValue: contract.contractValue || '',
         validity: contract.validity ? contract.validity.split('T')[0] : '',
         status: contract.status || 'active'
@@ -140,7 +153,7 @@ export default function Contracts() {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    const finalValue = name === 'referenceId' ? value.toUpperCase() : value;
+    const finalValue = value;
     
     if (name === 'projectId' && value) {
         const selected = projects.find(p => String(p.id) === String(value));
@@ -150,6 +163,19 @@ export default function Contracts() {
                 projectId: value,
                 contractValue: selected.value || prev.contractValue,
                 validity: selected.endDate ? selected.endDate.split('T')[0] : prev.validity
+            }));
+            return;
+        }
+    }
+    
+    if (name === 'tenderId' && value) {
+        const selected = tenders.find(t => String(t.id) === String(value));
+        if (selected) {
+            setFormData(prev => ({
+                ...prev,
+                tenderId: value,
+                contractValue: selected.value || selected.contractValue || prev.contractValue,
+                validity: selected.closingDate ? selected.closingDate.split('T')[0] : prev.validity
             }));
             return;
         }
@@ -174,7 +200,7 @@ export default function Contracts() {
           <button className="btn-secondary flex items-center gap-2" onClick={fetchContracts}>
             <History className="w-4 h-4" /> Refresh
           </button>
-          <button onClick={() => { setIsEditing(false); setFormData({ referenceId: '', projectId: '', contractValue: '', validity: '', status: 'active' }); setIsModalOpen(true); }} className="btn-primary flex items-center gap-2">
+          <button onClick={() => { setIsEditing(false); setFormData({ projectId: '', tenderId: '', contractValue: '', validity: '', status: 'active' }); setIsModalOpen(true); }} className="btn-primary flex items-center gap-2">
             <Plus className="w-5 h-5" /> Archive Contract
           </button>
         </div>
@@ -251,7 +277,12 @@ export default function Contracts() {
                   </td>
                   <td className="table-cell text-center">
                     <p className="font-bold text-slate-700 mb-1">{getProjectName(contract.projectId)}</p>
-                    <span className="px-2 py-0.5 bg-slate-100 rounded text-[9px] font-bold text-slate-400">ID: {contract.projectId}</span>
+                    <span className="px-2 py-0.5 bg-slate-100 rounded text-[9px] font-bold text-slate-400">ID: {contract.projectId || 'N/A'}</span>
+                    {contract.tenderId && (
+                      <div className="mt-1">
+                        <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[9px] font-bold uppercase tracking-widest">Tender {contract.tenderId}</span>
+                      </div>
+                    )}
                   </td>
                   <td className="table-cell text-right font-black text-slate-900 tracking-tight">{formatCurrency(contract.contractValue)}</td>
                   <td className="table-cell text-center whitespace-nowrap">
@@ -358,22 +389,33 @@ export default function Contracts() {
                 <button onClick={() => setIsModalOpen(false)} className="text-slate-300 hover:text-slate-600 transition-all"><X className="w-6 h-6" /></button>
             </div>
             <form onSubmit={handleSave} className="p-8 space-y-6">
-                <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Reference ID <span className="text-red-500">*</span></label>
-                        <input name="referenceId" required className="input w-full h-12 rounded-xl text-sm" placeholder="e.g. CONTRACT-2025-001" value={formData.referenceId} onChange={handleInputChange} />
-                    </div>
-                    <div className="space-y-2">
+                <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Select Project <span className="text-red-500">*</span></label>
                         <div className="relative">
                             <select name="projectId" required className="input w-full h-12 rounded-xl text-sm font-bold appearance-none bg-white pr-10" value={formData.projectId} onChange={handleInputChange}>
                                 <option value="">-- Choose Project --</option>
                                 {projects.map(p => (
-                                    <option key={p.id} value={p.id}>{p.name} (ID: {p.id})</option>
+                                    <option key={p.id} value={p.id}>
+                                        {p.name} - {formatCurrency(p.value)} ({p.status || 'Active'})
+                                    </option>
                                 ))}
                             </select>
                             <ChevronDown className="w-4 h-4 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                         </div>
+                    </div>
+                
+                <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Link Tender (Optional)</label>
+                    <div className="relative">
+                        <select name="tenderId" className="input w-full h-12 rounded-xl text-sm font-bold appearance-none bg-white pr-10" value={formData.tenderId || ''} onChange={handleInputChange}>
+                            <option value="">-- Choose Tender --</option>
+                            {tenders.map(t => (
+                                <option key={t.id} value={t.id}>
+                                    {t.tenderId} | {t.title} - {formatCurrency(t.value)} ({t.status || 'Active'})
+                                </option>
+                            ))}
+                        </select>
+                        <ChevronDown className="w-4 h-4 text-slate-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
                 </div>
                 
