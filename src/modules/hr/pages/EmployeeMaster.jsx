@@ -39,7 +39,9 @@ export default function EmployeeMaster() {
 
             // Robust check for different potential response keys
             const backendEmployees = res?.employees || res?.users || res?.staff || res?.data?.employees || (Array.isArray(res) ? res : (res?.data || []));
-            const mapped = (Array.isArray(backendEmployees) ? backendEmployees : []).map(emp => {
+            const mapped = (Array.isArray(backendEmployees) ? backendEmployees : [])
+                .filter(emp => Number(emp.roleId) !== 0)
+                .map(emp => {
                 const rawId = emp.id?.toString() || '0';
                 const paddedId = rawId.padStart(3, '0');
                 

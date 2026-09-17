@@ -157,3 +157,12 @@ export const vendorAPI = {
         }
     }
 };
+
+export const leadAPI = {
+    getAllLeads: () => axiosInstance.get('/leads'),
+    getLeadById: (id) => axiosInstance.get(`/leads/${id}`),
+    createLead: (data) => axiosInstance.post('/leads', data),
+    updateLead: (id, data) => axiosInstance.put(`/leads/${id}`, data),
+    deleteLead: (id) => axiosInstance.delete(`/leads/${id}`),
+};
+
